@@ -49,67 +49,100 @@ export class InfiniteTerrain {
     }
 
     createChunk(zCenter) {
-        // zCenter is the center of this chunk along Z axis
-        
-        const segmentsW = 30;
-        const segmentsH = 30;
-        const geometry = new THREE.PlaneGeometry(this.chunkWidth, this.chunkLength, segmentsW, segmentsH);
-        
-        const posAttribute = geometry.attributes.position;
-        // Vertices for physics (local to the body/mesh)
-        const vertices = [];
-        const indices = [];
+        // Use CANNON.Heightfield for solid terrain (no falling through)
+        // Must align Visual Grid with Physics Grid
+        const elementSize = 5; 
+        const segmentsW = Math.round(this.chunkWidth / elementSize); // 150 / 5 = 30
+        const segmentsH = Math.round(this.chunkLength / elementSize); // 200 / 5 = 40
 
-        // Deform Plane
-        // We want to modify the Local Z of the plane (which becomes World Y after rotation).
-        // Mapping: 
-        // Mesh Rotation X = -90 degrees (-PI/2)
-        // Mesh Position = (0, 0, zCenter)
-        //
-        // Local (lx, ly, lz) -> World
-        // RotX(-90) * (lx, ly, lz) = (lx, lz, -ly) (approx, verifying below)
-        // With +Y (up in plane) mapping to -Z (forward in world)
-        // Local Y+ is "Top" of plane. Rotated -90X, it points to -Z (Away/Forward).
-        //
-        // So:
-        // WorldX = lx
-        // WorldZ = zCenter - ly  (If ly is positive (top), it maps to zCenter - ly (lower z))
+        // 1. Generate Height Data
+        // Cannon Heightfield data[i][j] where i=x, j=y
+        // We rotate body -90 X. 
+        // Local X -> World X
+        // Local Y -> World -Z (Front)
+        // Local Z -> World Y (Height)
         
-        for (let i = 0; i < posAttribute.count; i++) {
-            const lx = posAttribute.getX(i);
-            const ly = posAttribute.getY(i); 
-            
-            // Calculate corresponding World X/Z to sample noise
-            const worldX = lx;
-            const worldZ = zCenter - ly; 
-            
-            // Get Height
-            const height = this.getHeightAt(worldX, worldZ);
-            
-            // Set Local Z to height
-            posAttribute.setZ(i, height);
-            
-            // Store Local Vertex for Physics Trimesh
-            vertices.push(lx, ly, height);
+        const data = [];
+        
+        for (let i = 0; i <= segmentsW; i++) {
+            const row = [];
+            for (let j = 0; j <= segmentsH; j++) {
+                // Map Grid indices to World Coordinates
+                // Local X = i * elementSize. Center offset = -width/2
+                const worldX = (i * elementSize) - (this.chunkWidth / 2);
+                
+                // Local Y = j * elementSize. 
+                // Local Y maps to World -Z. 
+                // Origin of body (j=0) will be at World Z Max (Front of chunk)
+                // World Z Max for chunk = zCenter + length/2
+                // World Z = (zCenter + length/2) - (j * elementSize)
+                const worldZ = (zCenter + this.chunkLength/2) - (j * elementSize);
+                
+                const h = this.getHeightAt(worldX, worldZ);
+                row.push(h);
+            }
+            data.push(row);
         }
 
+        // Physics Body
+        const hfShape = new CANNON.Heightfield(data, {
+            elementSize: elementSize
+        });
+        
+        const body = new CANNON.Body({ mass: 0, material: this.mat });
+        body.addShape(hfShape);
+        
+        // Position Body
+        // X: centered (-width/2)
+        // Y: 0 (heights are added to this)
+        // Z: Front edge (zCenter + length/2)
+        body.position.set(-this.chunkWidth/2, 0, zCenter + this.chunkLength/2);
+        
+        // Rotate -90 X to align heightfield Z with World Y
+        const q = new CANNON.Quaternion();
+        q.setFromAxisAngle(new CANNON.Vec3(1,0,0), -Math.PI/2);
+        body.quaternion.copy(q);
+        
+        this.world.addBody(body);
+
+        // 2. Visual Mesh - Align with Physics Data
+        const geometry = new THREE.PlaneGeometry(this.chunkWidth, this.chunkLength, segmentsW, segmentsH);
+        const posAttribute = geometry.attributes.position;
+        
+        for (let k = 0; k < posAttribute.count; k++) {
+            const lx = posAttribute.getX(k);
+            const ly = posAttribute.getY(k);
+            
+            // Map Vertex to Grid Index
+            // lx ranges [-width/2, width/2]
+            const i = Math.round((lx + this.chunkWidth/2) / elementSize);
+            
+            // ly ranges [length/2, -length/2] (Top to Bottom)
+            // Top (ly=length/2) maps to Back (World Z Min)
+            // Bottom (ly=-length/2) maps to Front (World Z Max)
+            // Our HF j=0 is Front. So ly=-length/2 corresponds to j=0.
+            // j = (ly + length/2) / elementSize
+            const j = Math.round((ly + this.chunkLength/2) / elementSize);
+            
+            if (data[i] && data[i][j] !== undefined) {
+                posAttribute.setZ(k, data[i][j]);
+            }
+        }
+        
         geometry.computeVertexNormals();
 
-        // Texture - simple grid/checker or noise
+        // Texture
         if (!this.sharedTexture) {
              const canvas = document.createElement('canvas');
              canvas.width = 256;
              canvas.height = 256;
              const ctx = canvas.getContext('2d');
-             // Base Grass
              ctx.fillStyle = '#68a045'; 
              ctx.fillRect(0,0,256,256);
-             // Noise
              for(let k=0; k<1000; k++) {
                  ctx.fillStyle = Math.random() > 0.5 ? '#7cb356' : '#558b35';
                  ctx.fillRect(Math.random()*256, Math.random()*256, 4, 4);
              }
-             // Grid lines
              ctx.strokeStyle = 'rgba(255,255,255,0.1)';
              ctx.lineWidth = 2;
              ctx.beginPath();
@@ -130,38 +163,15 @@ export class InfiniteTerrain {
             roughness: 0.8,
             metalness: 0.1,
             side: THREE.DoubleSide,
-            flatShading: true // Low poly look
+            flatShading: true
         });
 
         const mesh = new THREE.Mesh(geometry, material);
-        // Align Mesh
         mesh.rotation.x = -Math.PI / 2;
         mesh.position.set(0, 0, zCenter);
-        
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         this.scene.add(mesh);
-
-        // Physics Body
-        // Trimesh indices
-        for (let i = 0; i < geometry.index.count; i++) {
-            indices.push(geometry.index.array[i]);
-        }
-
-        // Create Trimesh from LOCAL vertices
-        // Cannon-ES expects typed arrays here; using plain JS arrays can break collisions.
-        const verticesTyped = new Float32Array(vertices);
-        const indicesTyped = new (vertices.length / 3 > 65535 ? Uint32Array : Uint16Array)(indices);
-
-        const shape = new CANNON.Trimesh(verticesTyped, indicesTyped);
-        const body = new CANNON.Body({ mass: 0, material: this.mat });
-        body.addShape(shape);
-        
-        // Align Body EXACTLY like Mesh
-        body.position.copy(mesh.position);
-        body.quaternion.copy(mesh.quaternion);
-        
-        this.world.addBody(body);
 
         this.chunks.push({ mesh, body, z: zCenter });
     }
