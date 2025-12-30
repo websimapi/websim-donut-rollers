@@ -154,16 +154,21 @@ export class Donut {
     boostForward() {
         if (!this.isRolling) return;
 
-        // Smaller forward impulse so boosts don't overpower gravity-based motion
-        const linearBoost = 8; // was 40
-        const impulse = new CANNON.Vec3(0, 0, linearBoost); // forward along +Z
+        // Linear push down the hill (World +Z) to maintain race direction
+        const linearBoost = 10; 
+        const impulse = new CANNON.Vec3(0, 0, linearBoost); 
         this.body.applyImpulse(impulse, this.body.position);
 
-        // Add a gentle angular boost aligned with current forward direction
-        const forwardZ = this.body.velocity.z;
-        const dir = forwardZ >= 0 ? 1 : -1; // match current travel direction
-        const angularBoost = 2.5;
-        this.body.angularVelocity.x += dir * angularBoost;
+        // Angular boost: Spin the wheel around its actual physical axle
+        // The physics body Local X axis is the rotation axis (Axle) due to our shape setup
+        const axle = new CANNON.Vec3(1, 0, 0);
+        this.body.quaternion.vmult(axle, axle);
+
+        // Apply spin to the angular velocity along the axle vector
+        // Positive rotation around local X propels the donut forward relative to its facing
+        const angularBoost = 5.0;
+        const spinImpulse = axle.scale(angularBoost);
+        this.body.angularVelocity.vadd(spinImpulse, this.body.angularVelocity);
 
         this.assets.playSound('jump');
     }
