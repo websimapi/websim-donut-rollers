@@ -85,8 +85,8 @@ loadAudio('./music_loop.mp3', 'music');
 const terrain = new InfiniteTerrain(scene, world);
 
 // Calculate start height based on terrain at 0,0
-// Add extra height to ensure we don't spawn inside the mesh collision
-const startY = terrain.getHeightAt(0, 0) + 5; 
+// Start much higher to prevent initial clipping
+const startY = terrain.getHeightAt(0, 0) + 8; 
 const donut = new Donut(scene, world, new THREE.Vector3(0, startY, 0), assets);
 
 // --- Input Handling ---
@@ -202,22 +202,23 @@ function animate() {
     } else if (gameState === 'PLAYING') {
         const targetPos = donut.getPosition();
         
-        // Offset camera relative to slope
-        // Looking down from behind
-        const offset = new THREE.Vector3(0, 8, 12); 
-        
-        // Smooth follow
-        const idealPos = new THREE.Vector3().copy(targetPos).add(offset);
-        // Clamp camera Y to not go underground if donut is in a dip
-        // idealPos.y = Math.max(idealPos.y, targetPos.y + 2);
-
-        camera.position.lerp(idealPos, 0.1);
-        camera.lookAt(targetPos);
-        
-        // Update Light
-        dirLight.position.set(targetPos.x + 20, targetPos.y + 30, targetPos.z + 20);
-        dirLight.target.position.copy(targetPos);
-        dirLight.target.updateMatrixWorld();
+        // Safety check to prevent camera NaN bugs causing black/blue screen
+        if (targetPos && !isNaN(targetPos.x) && !isNaN(targetPos.y) && !isNaN(targetPos.z)) {
+            // Offset camera relative to slope
+            // Looking down from behind
+            const offset = new THREE.Vector3(0, 8, 12); 
+            
+            // Smooth follow
+            const idealPos = new THREE.Vector3().copy(targetPos).add(offset);
+            
+            camera.position.lerp(idealPos, 0.1);
+            camera.lookAt(targetPos);
+            
+            // Update Light
+            dirLight.position.set(targetPos.x + 20, targetPos.y + 30, targetPos.z + 20);
+            dirLight.target.position.copy(targetPos);
+            dirLight.target.updateMatrixWorld();
+        }
     }
 
     renderer.render(scene, camera);

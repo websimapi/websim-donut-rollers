@@ -21,33 +21,28 @@ export class InfiniteTerrain {
         this.createChunk(0);                   // Z center 0 (Start)
         this.createChunk(-this.chunkLength);   // Z center -200 (Ahead)
         this.createChunk(-this.chunkLength*2); // Z center -400 (Far Ahead)
-        
-        this.addSafetyFloor();
     }
 
     // Mathematical definition of the mountain shape
     getHeightAt(x, z) {
         // Base Slope: Downhill as Z decreases
-        // We want a steep mountain feel
-        // y = z * 0.4 (at z=-100, y=-40)
         let y = z * 0.4;
 
+        // Flatten the start area slightly to ensure a safe landing pad
+        if (z > -10 && z < 10) {
+            // Slight smoothing around origin
+            y = (z * 0.4) * 0.5; // Flatter slope at start
+        }
+
         // Add a "bowl" shape so the player stays in the middle naturally
-        // x^2 factor
         y += Math.pow(Math.abs(x) / 15, 2.5);
 
         // Add noise/hills
-        // Low frequency rolling hills
         y += Math.sin(z * 0.05) * 2;
         y += Math.cos(x * 0.1) * 1;
         
         // High frequency roughness
         y += Math.sin(z * 0.2) * 0.5;
-        
-        // Start Platform Flattening (around Z=0 to Z=20)
-        // Smoothly blend to flat at start so player doesn't slide immediately?
-        // Actually user wants to roll immediately. 
-        // But let's ensure the very start (0,0) isn't inside a spike.
         
         return y;
     }
@@ -171,19 +166,6 @@ export class InfiniteTerrain {
         this.world.addBody(body);
 
         this.chunks.push({ mesh, body, z: zCenter });
-    }
-
-    // Safety floor to prevent falling through the world
-    addSafetyFloor() {
-        const shape = new CANNON.Plane();
-        const body = new CANNON.Body({
-            mass: 0, 
-            material: this.mat
-        });
-        body.addShape(shape);
-        body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-        body.position.set(0, -50, 0); // Catch player if they fall
-        this.world.addBody(body);
     }
 
     update(playerZ) {
