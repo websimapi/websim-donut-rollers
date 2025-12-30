@@ -149,7 +149,11 @@ export class InfiniteTerrain {
         }
 
         // Create Trimesh from LOCAL vertices
-        const shape = new CANNON.Trimesh(vertices, indices);
+        // Cannon-ES expects typed arrays here; using plain JS arrays can break collisions.
+        const verticesTyped = new Float32Array(vertices);
+        const indicesTyped = new (vertices.length / 3 > 65535 ? Uint32Array : Uint16Array)(indices);
+
+        const shape = new CANNON.Trimesh(verticesTyped, indicesTyped);
         const body = new CANNON.Body({ mass: 0, material: this.mat });
         body.addShape(shape);
         
