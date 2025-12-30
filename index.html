@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Donut Rollers</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://esm.sh/three@0.160.0",
+                "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/",
+                "cannon-es": "https://esm.sh/cannon-es@0.20.0"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="game-container"></div>
+    
+    <div id="ui-layer">
+        <div id="title-screen">
+            <h1 class="game-title">DONUT ROLLERS</h1>
+            <div id="tap-to-start" class="blink">TAP TO START</div>
+        </div>
+        <div id="score-display" class="hidden">SCORE: <span id="score-val">0</span></div>
+        <div id="controls-hint" class="hidden">STEER</div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
