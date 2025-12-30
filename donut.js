@@ -9,6 +9,10 @@ export class Donut {
         
         // State
         this.isRolling = false;
+        this.steeringInput = 0;
+        this.isUnstable = false;
+        this.isFlattening = false;
+        this.flattenFactor = 0; // 0 to 1
         
         // --- Visuals ---
         this.meshGroup = new THREE.Group();
@@ -77,8 +81,6 @@ export class Donut {
         // Continuous Collision Detection
         this.body.ccdSpeedThreshold = 0.5;
         this.body.ccdIterations = 10;
-        
-        this.lastBoostTime = 0;
     }
 
     _addCharacterFeatures() {
@@ -130,9 +132,11 @@ export class Donut {
 
     startRolling() {
         this.isRolling = true;
+        this.isUnstable = false;
+        this.isFlattening = false;
         
         // Sync Physics to Visual Start
-        this.meshGroup.rotation.set(0, 0, 0); // Reset visual to identity (aligned with physics body)
+        this.meshGroup.rotation.set(0, 0, 0); 
         
         if (!isNaN(this.meshGroup.position.y)) {
             this.body.position.copy(this.meshGroup.position);
@@ -143,14 +147,84 @@ export class Donut {
         this.world.addBody(this.body);
         
         // Launch Physics
-        // Forward is +Z. Start with higher speed to overcome initial friction
         this.body.velocity.set(0, 0, 25);
-        // Angular Velocity +X (Forward Roll)
         this.body.angularVelocity.set(15, 0, 0);
 
         // Sounds
         this.assets.playSound('jump');
         this.assets.playLoop('roll');
+    }
+
+    // --- New Mechanics ---
+
+    attemptBoost() {
+        if (!this.isRolling || this.isUnstable || this.isFlattening) return;
+
+        // Calculate Forward Direction
+        // Forward = Cross(Axle, WorldUp)
+        const axle = new CANNON.Vec3(1, 0, 0);
+        this.body.quaternion.vmult(axle, axle);
+        const up = new CANNON.Vec3(0, 1, 0);
+        
+        const forward = new CANNON.Vec3();
+        axle.cross(up, forward);
+        forward.normalize();
+
+        // Ensure boost is in the direction we are actually moving
+        const vel = this.body.velocity;
+        if (forward.dot(vel) < 0) forward.scale(-1, forward);
+
+        // Boost Magnitude: Base + % of current speed
+        const speed = vel.length();
+        const impulse = 30 + (speed * 0.5); 
+        
+        // Apply Linear Impulse
+        this.body.applyImpulse(forward.scale(impulse), this.body.position);
+
+        // Apply Angular Impulse (Spin Faster)
+        // Torque axis matches Axle direction. 
+        // We want to spin 'forward'. If Axle points Right, and we roll Forward, torque is +X?
+        // Right hand rule: Thumb +X (Right), Fingers curl over Top towards Front.
+        // Yes. So if Axle aligns with global X, +Torque spins forward.
+        // We need to apply torque vector ALONG the axle.
+        // Direction? If forward.cross(Up) is roughly Axle, then positive torque spins forward.
+        const spinDir = forward.cross(up); // Should be roughly parallel to axle
+        if (spinDir.dot(axle) < 0) spinDir.scale(-1, spinDir);
+        
+        const torqueImpulse = 20; 
+        this.body.angularVelocity.vadd(spinDir.scale(torqueImpulse), this.body.angularVelocity);
+
+        this.assets.playSound('jump'); // Feedback
+        
+        // Visual flair could go here (particle burst etc)
+    }
+
+    attemptCorrection(swipeDir) {
+        // swipeDir: -1 (Left) or 1 (Right)
+        if (!this.isRolling) return;
+
+        // Only allow strong correction if unstable, or weak if stable
+        const strength = this.isUnstable ? 150 : 30;
+
+        // Corrective Torque
+        // If we swipe Right (+1), we want to roll the donut to the Right.
+        // Roll Right means rotation around -Z (if Z is forward).
+        // Let's use the actual Heading vector.
+        
+        const axle = new CANNON.Vec3(1, 0, 0);
+        this.body.quaternion.vmult(axle, axle);
+        const up = new CANNON.Vec3(0, 1, 0);
+        const heading = new CANNON.Vec3();
+        axle.cross(up, heading); // Vector pointing forward
+        heading.normalize();
+
+        // Torque vector along Heading controls "Roll" (banking)
+        // Right Hand Rule: Thumb along Heading.
+        // If Heading is +Z. Torque +Z rolls "Left". Torque -Z rolls "Right".
+        // So Swipe Right (+1) -> Torque -Heading.
+        const torqueVec = heading.scale(-swipeDir * strength);
+        
+        this.body.torque.vadd(torqueVec, this.body.torque);
     }
 
     update(time, dt) {
@@ -165,64 +239,101 @@ export class Donut {
             this.legL.rotation.z = Math.sin(time * 4) * 0.2;
             this.legR.rotation.z = Math.cos(time * 4) * 0.2;
         } else {
-            // --- Physics Forces & Logic ---
+            // --- Physics & Mechanics ---
+            
+            // 1. Calculate Orientation & Stability
+            const axle = new CANNON.Vec3(1, 0, 0);
+            this.body.quaternion.vmult(axle, axle);
+            const up = new CANNON.Vec3(0, 1, 0);
+            
+            // Tilt: 0 = Vertical, 1 = Flat
+            const tilt = Math.abs(axle.dot(up));
+            
+            // Stability Threshold (approx 17 degrees -> 0.3 dot product)
+            const wasUnstable = this.isUnstable;
+            this.isUnstable = tilt > 0.3;
+            
+            // 2. Flattening Logic
+            const angSpeed = this.body.angularVelocity.length();
+            
+            // If unstable and slow spinning -> Start flattening sequence
+            if (this.isUnstable && angSpeed < 10) {
+                this.isFlattening = true;
+            }
+            
+            if (this.isFlattening) {
+                this.flattenFactor = Math.min(1, this.flattenFactor + dt * 0.5);
+                
+                // Exponential drag
+                this.body.linearDamping = 0.1 + (this.flattenFactor * 0.8);
+                this.body.angularDamping = 0.1 + (this.flattenFactor * 0.8);
+                
+                // Tipping Torque: Push it over!
+                // Apply torque perpendicular to axle and up (Heading axis) to increase tilt
+                // If Axle.y > 0, we want to increase Axle.y.
+                // We need a torque that rotates around Heading.
+                // If Axle.y > 0, tilt is same direction as Up.
+                const heading = new CANNON.Vec3();
+                axle.cross(up, heading);
+                heading.normalize();
+                
+                // Direction to tip:
+                // If we are tilting Left, push further Left.
+                // Determining sign is tricky, so let's just push towards the ground.
+                // Cross(Axle, Velocity) gives a vector pointing roughly Down or Up.
+                // Let's just dampen stability.
+            } else {
+                this.flattenFactor = Math.max(0, this.flattenFactor - dt);
+                this.body.linearDamping = 0.0;
+                this.body.angularDamping = 0.01;
+            }
+
+            // 3. Apply Steering
+            // If flattening, reduce control
+            const controlStr = this.isFlattening ? (1 - this.flattenFactor) : 1;
+            if (Math.abs(this.steeringInput) > 0.01 && controlStr > 0) {
+                 const sidewaysForce = 60 * controlStr;
+                 // Apply force relative to heading
+                 // Actually, World X is fine for side-to-side on this terrain
+                 this.body.applyForce(new CANNON.Vec3(this.steeringInput * sidewaysForce, 0, 0), this.body.position);
+            }
+
+            // 4. Air Resistance / Drag
             const vel = this.body.velocity;
             const speed = vel.length();
-
-            // 1. Air Resistance (Drag)
-            // Increased drag to prevent uncontrollable acceleration
             if (speed > 1) {
-                const dragFactor = 0.005; 
+                const dragFactor = 0.002;
                 const dragMagnitude = speed * speed * dragFactor;
                 const dragForce = vel.clone().scale(-dragMagnitude / speed);
                 this.body.applyForce(dragForce, this.body.position);
             }
 
-            // Cap Vertical Velocity (Anti-Space Launch)
-            // If flying up too fast from a bump, crush it down to keep player on track
-            if (vel.y > 15) {
-                 vel.y *= 0.85; 
-                 this.body.velocity.y = vel.y;
+            // 5. Hard Falling Friction (Penny Stop)
+            if (tilt > 0.5) {
+                // If extremely tilted, basically grinding
+                this.body.angularDamping = 0.5;
+                this.body.linearDamping = 0.5;
             }
-
-            // 2. "Penny" Falling Physics
-            // Calculate Tilt: 0 = Upright (Rolling), 1 = Flat (Lying down)
-            const axle = new CANNON.Vec3(1, 0, 0);
-            this.body.quaternion.vmult(axle, axle);
-            const tilt = Math.abs(axle.dot(new CANNON.Vec3(0, 1, 0)));
             
-            // If the donut falls over (high tilt), friction should skyrocket.
-            if (tilt > 0.3) {
-                // Smooth transition from rolling to grinding
-                let grind = (tilt - 0.3) / 0.7; // 0 to 1
-                grind = Math.max(0, Math.min(1, grind));
+            // Auto-stabilization (Assist)
+            // If going fast and reasonably upright, apply torque to keep upright
+            if (speed > 15 && tilt < 0.3 && !this.isFlattening) {
+                // Torque to align Axle with Horizon
+                // Axis of rotation required is Heading
+                const heading = new CANNON.Vec3();
+                axle.cross(up, heading);
+                heading.normalize();
                 
-                // Extremely high damping to simulate "scraping" the ground when flat
-                this.body.linearDamping = 0.1 + (grind * 0.85); 
-                this.body.angularDamping = 0.1 + (grind * 0.95);
-                
-                // If it is very flat, forcefully decay velocity to stop infinite sliding
-                if (tilt > 0.7) {
-                    vel.x *= 0.98;
-                    vel.z *= 0.98; // Kill forward momentum
-                    this.body.velocity.copy(vel);
-                }
-            } else {
-                // Free rolling
-                this.body.linearDamping = 0.001; 
-                this.body.angularDamping = 0.01;
+                // We want Axle.y to be 0.
+                // If Axle.y > 0, we need Negative Torque around Heading (Right Hand Rule?)
+                // Let's try proportional feedback
+                const correction = -axle.y * 50; 
+                this.body.torque.vadd(heading.scale(correction), this.body.torque);
             }
 
-            // 3. Stabilization Helper
-            // At high speeds, help the donut stay upright slightly to prevent frustrating early falls
-            if (speed > 15 && tilt < 0.3) {
-                this.body.angularDamping = 0.1;
-            }
-
-            // 4. Hard Speed Cap (Safety)
-            // Prevents tunneling through terrain and uncontrollable states
-            if (speed > 60) {
-                vel.scale(60 / speed);
+            // Speed Cap
+            if (speed > 80) {
+                vel.scale(80 / speed);
                 this.body.velocity.copy(vel);
             }
 
@@ -231,8 +342,15 @@ export class Donut {
                  this.meshGroup.position.copy(this.body.position);
                  this.meshGroup.quaternion.copy(this.body.quaternion);
             }
+            
+            // Visual feedback for Instability
+            if (this.isUnstable) {
+                this.meshGroup.children[0].material.color.setHex(0xffcccc); // Red tint
+            } else {
+                this.meshGroup.children[0].material.color.setHex(0xffffff);
+            }
 
-            // Hide limbs smoothly
+            // Hide limbs
             if (this.limbsGroup.visible) {
                 const s = Math.max(0, this.limbsGroup.scale.x - dt * 5);
                 this.limbsGroup.scale.set(s, s, s);
@@ -250,40 +368,6 @@ export class Donut {
             this.body.position.copy(this.meshGroup.position);
             this.body.velocity.set(0,0,0);
             this.body.angularVelocity.set(0,0,0);
-        }
-    }
-    
-    applyForce(vec) {
-        this.body.applyForce(vec, this.body.position);
-    }
-
-    boost() {
-        const now = Date.now();
-        if (now - this.lastBoostTime < 1500) return; // 1.5s cooldown
-        
-        this.lastBoostTime = now;
-
-        // Calculate forward direction relative to current rotation
-        // Axle is Local X. Transform to World.
-        const axle = new CANNON.Vec3(1, 0, 0);
-        this.body.quaternion.vmult(axle, axle);
-        
-        // Up is World Y
-        const up = new CANNON.Vec3(0, 1, 0);
-        
-        // Forward = Axle x Up (Cross Product) produces a vector tangent to the ground
-        const forward = new CANNON.Vec3();
-        axle.cross(up, forward);
-        forward.normalize();
-        
-        if (forward.length() > 0) {
-            // Apply strong impulse for instant speed
-            // Force magnitude adjusted for mass=30
-            const force = forward.scale(800); 
-            this.body.applyImpulse(force, this.body.position);
-            
-            // Audio feedback
-            if(this.assets.playSound) this.assets.playSound('jump');
         }
     }
 }

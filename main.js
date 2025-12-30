@@ -38,7 +38,7 @@ scene.add(dirLight);
 
 // Physics World
 const world = new CANNON.World();
-world.gravity.set(0, -70, 0); // Stronger gravity to keep donut grounded
+world.gravity.set(0, -25, 0); // Strong, realistic gravity pull to ensure slope adherence
 world.solver.iterations = 30; // High iterations for stable heightfield collisions
 world.defaultContactMaterial.friction = 0.3; // Lower default friction to prevent sticky "glitches"
 world.defaultContactMaterial.restitution = 0.2;
@@ -115,6 +115,39 @@ window.addEventListener('mousemove', (e) => {
     }
 });
 
+// Gesture Detection
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+
+window.addEventListener('touchstart', (e) => {
+    if(e.target.tagName === 'BUTTON') return;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchStartTime = performance.now();
+}, { passive: false });
+
+window.addEventListener('touchend', (e) => {
+    if(e.target.tagName === 'BUTTON') return;
+    
+    const dt = performance.now() - touchStartTime;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    
+    if (gameState === 'PLAYING') {
+        // Tap (Short time, little movement)
+        if (dt < 250 && Math.abs(dx) < 30 && Math.abs(dy) < 30) {
+            donut.attemptBoost();
+        }
+        // Swipe (Short time, big movement)
+        else if (dt < 400 && Math.abs(dx) > 50) {
+            // Swipe Right (1) or Left (-1)
+            const swipeDir = Math.sign(dx); 
+            donut.attemptCorrection(swipeDir);
+        }
+    }
+}, { passive: false });
+
 function startGame() {
     if (gameState !== 'IDLE') return;
     
@@ -140,19 +173,11 @@ function startGame() {
     gameState = 'PLAYING';
 }
 
-function handleTap() {
-    if (gameState === 'IDLE') {
-        startGame();
-    } else if (gameState === 'PLAYING') {
-        donut.boost();
-    }
-}
-
-window.addEventListener('click', handleTap);
+window.addEventListener('click', startGame);
 window.addEventListener('touchstart', (e) => {
     // Prevent default touch behaviors on canvas
     if(e.target.tagName !== 'BUTTON') {
-       handleTap();
+       startGame();
     }
 }, { passive: false });
 
@@ -180,9 +205,7 @@ function animate() {
 
     if (gameState === 'PLAYING') {
         // Input Physics
-        // Move sideways (Direct mapping) - Increased for wider terrain
-        const sidewaysForce = 100; 
-        donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
+        donut.steeringInput = input.x;
         
         // Pure Physics: We do not touch velocity manually.
         // Gravity and Terrain slope provide all acceleration.
