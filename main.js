@@ -170,12 +170,12 @@ function animate() {
         const sidewaysForce = 30;
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
-        // Always push forward (downhill is negative Z)
+        // Always push forward (downhill is positive Z)
         // If speed is low, boost it
         const vel = donut.body.velocity;
         // Increase Max speed cap / acceleration limit for faster gameplay
-        if (vel.z > -80) { 
-             donut.applyForce(new CANNON.Vec3(0, 0, -30));
+        if (vel.z < 80) { 
+             donut.applyForce(new CANNON.Vec3(0, 0, 30));
         }
 
         // Update Score
@@ -213,8 +213,8 @@ function animate() {
         
         // Safety check to prevent camera NaN bugs causing black/blue screen
         if (targetPos && !isNaN(targetPos.x) && !isNaN(targetPos.y) && !isNaN(targetPos.z)) {
-            // Offset camera relative to slope
-            const offset = new THREE.Vector3(0, 12, 18); 
+            // Offset camera relative to slope (Behind is -Z, since we move +Z)
+            const offset = new THREE.Vector3(0, 12, -18); 
             
             // Smooth follow
             const idealPos = new THREE.Vector3().copy(targetPos).add(offset);

@@ -16,18 +16,18 @@ export class InfiniteTerrain {
 
         // Initialize with chunks behind and ahead
         // Player starts at Z=0.
-        // We want chunks covering Z=100 down to Z=-500 initially
-        this.createChunk(this.chunkLength);    // Z center +200 (Backdrop)
+        // We want chunks covering Z=-200 up to Z=600 initially for +Z travel
+        this.createChunk(-this.chunkLength);   // Z center -200 (Backdrop)
         this.createChunk(0);                   // Z center 0 (Start)
-        this.createChunk(-this.chunkLength);   // Z center -200 (Ahead)
-        this.createChunk(-this.chunkLength*2); // Z center -400 (Far Ahead)
+        this.createChunk(this.chunkLength);    // Z center 200 (Ahead)
+        this.createChunk(this.chunkLength*2);  // Z center 400 (Far Ahead)
     }
 
     // Mathematical definition of the mountain shape
     getHeightAt(x, z) {
-        // Base Slope: Downhill as Z decreases
+        // Base Slope: Downhill as Z increases (Moving towards +Z)
         // Increased slope for speed and momentum
-        let y = z * 0.5; 
+        let y = -z * 0.5; 
 
         // Add a "bowl" shape so the player stays in the middle naturally
         y += Math.pow(Math.abs(x) / 15, 2.5);
@@ -162,17 +162,20 @@ export class InfiniteTerrain {
     }
 
     update(playerZ) {
-        // Add new chunks ahead
-        // Current lowest Z chunk
+        // Add new chunks ahead (Positive Z)
+        // Current highest Z chunk is at the end of the array
         const lastChunk = this.chunks[this.chunks.length - 1];
-        if (playerZ < lastChunk.z + this.chunkLength) { 
+        
+        // If player is within 1 chunk length of the edge
+        if (playerZ > lastChunk.z - this.chunkLength) { 
             // Player is approaching the end of the known world
-            // Generate next chunk at lastChunk.z - chunkLength
-            this.createChunk(lastChunk.z - this.chunkLength);
+            // Generate next chunk at lastChunk.z + chunkLength
+            this.createChunk(lastChunk.z + this.chunkLength);
         }
 
-        // Remove old chunks
-        if (this.chunks[0].z > playerZ + this.chunkLength * 2) {
+        // Remove old chunks (Low Z, behind player)
+        // First chunk in array is lowest Z
+        if (this.chunks[0].z < playerZ - this.chunkLength * 2) {
             const chunk = this.chunks.shift();
             this.scene.remove(chunk.mesh);
             this.world.removeBody(chunk.body);

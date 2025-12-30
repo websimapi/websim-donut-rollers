@@ -137,9 +137,10 @@ export class Donut {
         this.world.addBody(this.body);
         
         // Initial push - Stronger launch
-        this.body.velocity.set(0, -5, -60);
-        // Spin it forward immediately (Negative X for forward roll along -Z)
-        this.body.angularVelocity.set(-20, 0, 0);
+        // Moving towards +Z (Forward/Downhill)
+        this.body.velocity.set(0, -5, 60);
+        // Spin it forward immediately (Positive X for forward roll along +Z)
+        this.body.angularVelocity.set(20, 0, 0);
 
         // Play sounds
         this.assets.playSound('jump');
