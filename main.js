@@ -94,9 +94,76 @@ const terrain = new InfiniteTerrain(scene, world);
 const startY = terrain.getHeightAt(0, 0) + 5; 
 const donut = new Donut(scene, world, new THREE.Vector3(0, startY, 0), assets);
 
+// --- 3D Path Visualization ---
+let pathLine = null;
+let pathPoints3D = [];
+
+function createPathLine() {
+    if (pathLine) {
+        scene.remove(pathLine);
+        pathLine.geometry.dispose();
+    }
+    
+    if (pathPoints3D.length < 2) return;
+    
+    const geometry = new THREE.BufferGeometry().setFromPoints(pathPoints3D);
+    const material = new THREE.LineBasicMaterial({
+        color: 0xff69b4,
+        linewidth: 5,
+        transparent: true,
+        opacity: 0.8
+    });
+    
+    pathLine = new THREE.Line(geometry, material);
+    scene.add(pathLine);
+}
+
+function clearPathLine() {
+    if (pathLine) {
+        scene.remove(pathLine);
+        pathLine.geometry.dispose();
+        pathLine = null;
+    }
+    pathPoints3D = [];
+}
+
 // --- Input Handling ---
 function handleInput(x) {
     input.x = x;
+}
+
+// Raycaster for screen to world projection
+const raycaster = new THREE.Raycaster();
+
+function screenToWorld(screenX, screenY) {
+    // Convert screen coordinates to normalized device coordinates
+    const x = (screenX / window.innerWidth) * 2 - 1;
+    const y = -(screenY / window.innerHeight) * 2 + 1;
+    
+    raycaster.setFromCamera({ x, y }, camera);
+    
+    // Create a plane at the donut's current Z position
+    const donutZ = donut.getPosition().z;
+    
+    // Raycast to find intersection with terrain height
+    const ray = raycaster.ray;
+    const origin = ray.origin;
+    const direction = ray.direction;
+    
+    // Find where ray reaches donut's Z plane (approximate depth for parallax)
+    if (Math.abs(direction.z) > 0.001) {
+        const t = (donutZ - origin.z) / direction.z;
+        if (t > 0) {
+            const worldX = origin.x + direction.x * t;
+            const worldZ = origin.z + direction.z * t;
+            // Get actual terrain height at this projected X/Z
+            const terrainY = terrain.getHeightAt(worldX, worldZ);
+            
+            return new THREE.Vector3(worldX, terrainY + 0.5, worldZ);
+        }
+    }
+    
+    return null;
 }
 
 // Gesture State
@@ -112,12 +179,26 @@ const swipePath = document.getElementById('swipe-path');
 function updateSwipeVisuals() {
     if (!gesture.active || gesture.points.length < 2) {
         swipePath.setAttribute('d', '');
+        clearPathLine();
         return;
     }
+    
+    // Update 2D SVG path
     const d = gesture.points.reduce((acc, p, i) => {
         return acc + (i === 0 ? `M ${p.x} ${p.y}` : ` L ${p.x} ${p.y}`);
     }, '');
     swipePath.setAttribute('d', d);
+    
+    // Update 3D terrain path
+    if (gameState === 'PLAYING') {
+        pathPoints3D = gesture.points
+            .map(p => screenToWorld(p.x, p.y))
+            .filter(p => p !== null);
+        
+        if (pathPoints3D.length >= 2) {
+            createPathLine();
+        }
+    }
 }
 
 function endGesture() {
@@ -148,6 +229,9 @@ function endGesture() {
     gesture.active = false;
     gesture.points = [];
     updateSwipeVisuals();
+    
+    // Clear path after short delay
+    setTimeout(() => clearPathLine(), 300);
 }
 
 // Mouse Events
@@ -276,9 +360,38 @@ function animate() {
         // Update Terrain
         terrain.update(zPos);
         
-        // --- Game Over Logic ---
+        // --- Enhanced Bounds Checking ---
         const pos = donut.getPosition();
         const terrainY = terrain.getHeightAt(pos.x, pos.z);
+        
+        // Constrain X position (keep donut on track)
+        const maxX = 50; // Maximum distance from center
+        if (Math.abs(pos.x) > maxX) {
+            // Push back toward center
+            const pushForce = (Math.abs(pos.x) - maxX) * 100;
+            const direction = pos.x > 0 ? -1 : 1;
+            donut.body.applyForce(
+                new CANNON.Vec3(direction * pushForce * donut.body.mass, 0, 0),
+                donut.body.position
+            );
+        }
+
+        // Prevent excessive height (flying away)
+        const maxHeight = terrainY + 30;
+        if (pos.y > maxHeight) {
+            // Pull down aggressively
+            const excessHeight = pos.y - maxHeight;
+            donut.body.applyForce(
+                new CANNON.Vec3(0, -excessHeight * 50 * donut.body.mass, 0),
+                donut.body.position
+            );
+            // Dampen upward velocity
+            if (donut.body.velocity.y > 0) {
+                donut.body.velocity.y *= 0.5;
+            }
+        }
+
+        // --- Game Over Logic ---
         const dy = pos.y - terrainY;
         const speedSq = vel.x * vel.x + vel.y * vel.y + vel.z * vel.z;
 
@@ -326,6 +439,10 @@ function animate() {
             // Smooth follow
             const idealPos = new THREE.Vector3().copy(targetPos).add(offset);
             
+            // Constrain camera to reasonable bounds
+            idealPos.x = Math.max(-60, Math.min(60, idealPos.x));
+            idealPos.y = Math.max(5, Math.min(100, idealPos.y));
+
             // Use stiffer lerp to prevent losing the player at high speeds
             camera.position.lerp(idealPos, 0.2);
             camera.lookAt(targetPos);

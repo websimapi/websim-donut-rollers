@@ -323,7 +323,21 @@ export class Donut {
             if (offAxisSpin > 15) {
                 // Apply counter-torque
                 this.body.torque.vadd(spinPerp.scale(-10), this.body.torque);
-                // Don't apply heavy damping - let physics work
+            }
+            
+            // Prevent excessive angular velocity (helicopter spin)
+            const totalAngVel = this.body.angularVelocity.length();
+            if (totalAngVel > 30) {
+                this.body.angularVelocity.scale(30 / totalAngVel);
+            }
+            
+            // Cap vertical velocity to prevent launches
+            const maxUpVelocity = 15;
+            const maxDownVelocity = -50;
+            if (this.body.velocity.y > maxUpVelocity) {
+                this.body.velocity.y = maxUpVelocity;
+            } else if (this.body.velocity.y < maxDownVelocity) {
+                this.body.velocity.y = maxDownVelocity;
             }
 
             // --- Reasonable Speed Cap ---
