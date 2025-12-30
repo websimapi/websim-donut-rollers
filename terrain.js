@@ -44,8 +44,8 @@ export class InfiniteTerrain {
 
         // 2. X-Axis Profile: "Pipe" or "Bowl" shape
         // Keeps player centered.
-        // Gentle quadratic curve.
-        y += Math.pow(x / 15, 2) * 1.5;
+        // Gentle quadratic curve. Widened to reduce chaotic wall bounces.
+        y += Math.pow(x / 30, 2) * 1.5;
 
         // 3. Banking/Camber
         // Bank turns slightly based on the terrain waviness to keep it interesting visually

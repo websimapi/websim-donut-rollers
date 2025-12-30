@@ -180,8 +180,8 @@ function animate() {
 
     if (gameState === 'PLAYING') {
         // Input Physics
-        // Move sideways (Direct mapping)
-        const sidewaysForce = 60; 
+        // Move sideways (Direct mapping) - Increased for wider terrain
+        const sidewaysForce = 100; 
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
         // Pure Physics: We do not touch velocity manually.

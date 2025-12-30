@@ -170,13 +170,19 @@ export class Donut {
             const speed = vel.length();
 
             // 1. Air Resistance (Drag)
-            // Prevents "launching into space" by capping infinite acceleration
-            // F_drag = -k * v^2
+            // Increased drag to prevent uncontrollable acceleration
             if (speed > 1) {
-                const dragFactor = 0.002; // Tune for max speed feel
+                const dragFactor = 0.005; 
                 const dragMagnitude = speed * speed * dragFactor;
                 const dragForce = vel.clone().scale(-dragMagnitude / speed);
                 this.body.applyForce(dragForce, this.body.position);
+            }
+
+            // Cap Vertical Velocity (Anti-Space Launch)
+            // If flying up too fast from a bump, crush it down to keep player on track
+            if (vel.y > 15) {
+                 vel.y *= 0.85; 
+                 this.body.velocity.y = vel.y;
             }
 
             // 2. "Penny" Falling Physics
@@ -186,20 +192,24 @@ export class Donut {
             const tilt = Math.abs(axle.dot(new CANNON.Vec3(0, 1, 0)));
             
             // If the donut falls over (high tilt), friction should skyrocket.
-            // This stops it from sliding forever on its side.
-            if (tilt > 0.4) {
+            if (tilt > 0.3) {
                 // Smooth transition from rolling to grinding
-                // Map tilt 0.4->0.9 to damping 0.0->0.9
-                let grind = Math.max(0, (tilt - 0.4) * 2); 
-                grind = Math.min(1, grind);
+                let grind = (tilt - 0.3) / 0.7; // 0 to 1
+                grind = Math.max(0, Math.min(1, grind));
                 
-                // High linear damping simulates scraping ground
-                this.body.linearDamping = 0.01 + (grind * 0.8);
-                // High angular damping stops the spin
-                this.body.angularDamping = 0.01 + (grind * 0.9);
+                // Extremely high damping to simulate "scraping" the ground when flat
+                this.body.linearDamping = 0.1 + (grind * 0.85); 
+                this.body.angularDamping = 0.1 + (grind * 0.95);
+                
+                // If it is very flat, forcefully decay velocity to stop infinite sliding
+                if (tilt > 0.7) {
+                    vel.x *= 0.98;
+                    vel.z *= 0.98; // Kill forward momentum
+                    this.body.velocity.copy(vel);
+                }
             } else {
                 // Free rolling
-                this.body.linearDamping = 0.0; 
+                this.body.linearDamping = 0.001; 
                 this.body.angularDamping = 0.01;
             }
 
@@ -210,9 +220,9 @@ export class Donut {
             }
 
             // 4. Hard Speed Cap (Safety)
-            // Prevents tunneling through terrain
-            if (speed > 80) {
-                vel.scale(80 / speed);
+            // Prevents tunneling through terrain and uncontrollable states
+            if (speed > 60) {
+                vel.scale(60 / speed);
                 this.body.velocity.copy(vel);
             }
 
