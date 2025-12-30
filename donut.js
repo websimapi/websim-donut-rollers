@@ -74,9 +74,9 @@ export class Donut {
         
         this.body.position.copy(position);
         
-        // Zero damping for pure gravity physics
+        // Low damping for gravity physics, but enough to prevent infinite energy glitch
         this.body.linearDamping = 0.0;
-        this.body.angularDamping = 0.01;
+        this.body.angularDamping = 0.1;
 
         // Continuous Collision Detection
         this.body.ccdSpeedThreshold = 0.5;
@@ -310,9 +310,44 @@ export class Donut {
 
             // 5. Hard Falling Friction (Penny Stop)
             if (tilt > 0.5) {
-                // If extremely tilted, basically grinding
-                this.body.angularDamping = 0.5;
-                this.body.linearDamping = 0.5;
+                // If extremely tilted (falling flat like a penny), increase friction significantly
+                this.body.angularDamping = 0.8;
+                this.body.linearDamping = 0.8;
+                
+                // If spinning rapidly while flat (top-spin glitch), kill rotation immediately
+                if (this.body.angularVelocity.length() > 15) {
+                    this.body.angularDamping = 0.99;
+                }
+            }
+
+            // --- Glitch Prevention & Stabilization ---
+            // Detect tumbling/propeller spin (rotation NOT matching the wheel axle)
+            // This catches "spinning out of control" when airborne or glitching
+            const spin = this.body.angularVelocity;
+            const spinAlongAxle = spin.dot(axle);
+            const spinVecAlongAxle = axle.clone().scale(spinAlongAxle);
+            const spinPerp = spin.vsub(spinVecAlongAxle);
+            const offAxisSpin = spinPerp.length();
+
+            if (offAxisSpin > 10) { 
+                // We are tumbling wildly. Stabilize.
+                this.body.linearDamping = 0.9; 
+                this.body.angularDamping = 0.9; 
+                
+                // Apply counter-torque to stop the tumbling
+                this.body.torque.vadd(spinPerp.scale(-20), this.body.torque);
+
+                // Pull back down strongly if this happens in the air (prevents flying out of map)
+                this.body.applyForce(new CANNON.Vec3(0, -100 * this.body.mass, 0), this.body.position);
+            }
+
+            // Absolute Safety: Cap vertical velocity to prevent launching into space
+            if (this.body.velocity.y > 30) {
+                 this.body.velocity.y = 30; 
+            }
+            // If we are unexpectedly high and rising, push down
+            if (this.body.velocity.y > 10 && this.body.position.y > 20) {
+                 this.body.applyForce(new CANNON.Vec3(0, -50 * this.body.mass, 0), this.body.position);
             }
             
             // Auto-stabilization (Assist)
