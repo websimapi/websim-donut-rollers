@@ -93,7 +93,8 @@ const donut = new Donut(scene, world, new THREE.Vector3(0, startY, 0), assets);
 
 // --- Input Handling ---
 function handleInput(x) {
-    input.x = x;
+    // Invert steering so dragging right moves right intuitively
+    input.x = -x;
 }
 
 window.addEventListener('touchmove', (e) => {
@@ -166,16 +167,28 @@ function animate() {
         world.step(1 / 60, dt, 5);
         
         // Input Physics
-        // Move sideways
+        // Move sideways (steering already inverted in handleInput)
         const sidewaysForce = 30;
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
         // Always push forward (downhill is positive Z)
-        // If speed is low, boost it
         const vel = donut.body.velocity;
-        // Increase Max speed cap / acceleration limit for faster gameplay
-        if (vel.z < 80) { 
-             donut.applyForce(new CANNON.Vec3(0, 0, 30));
+
+        // Prevent uphill motion: clamp any backward (negative Z) velocity
+        if (vel.z < 0) {
+            vel.z = 0;
+        }
+
+        // Maintain a minimum downhill speed and cap the maximum
+        const minDownhillSpeed = 20;
+        const maxDownhillSpeed = 80;
+
+        if (vel.z < minDownhillSpeed) {
+            // Stronger push when too slow
+            donut.applyForce(new CANNON.Vec3(0, 0, 80));
+        } else if (vel.z < maxDownhillSpeed) {
+            // Gentle push as we approach max speed
+            donut.applyForce(new CANNON.Vec3(0, 0, 30));
         }
 
         // Update Score
