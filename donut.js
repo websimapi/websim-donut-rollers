@@ -75,8 +75,8 @@ export class Donut {
         this.body.angularDamping = 0.01;
 
         // Continuous Collision Detection
-        this.body.ccdSpeedThreshold = 1;
-        this.body.ccdIterations = 5;
+        this.body.ccdSpeedThreshold = 0.5;
+        this.body.ccdIterations = 10;
     }
 
     _addCharacterFeatures() {
@@ -163,37 +163,55 @@ export class Donut {
             this.legL.rotation.z = Math.sin(time * 4) * 0.2;
             this.legR.rotation.z = Math.cos(time * 4) * 0.2;
         } else {
-            // --- Penny Physics Logic ---
-            const speed = this.body.velocity.length();
-            
-            // Calculate Tilt (Deviation from upright rolling)
-            // Body X axis is the axle.
+            // --- Physics Forces & Logic ---
+            const vel = this.body.velocity;
+            const speed = vel.length();
+
+            // 1. Air Resistance (Drag)
+            // Prevents "launching into space" by capping infinite acceleration
+            // F_drag = -k * v^2
+            if (speed > 1) {
+                const dragFactor = 0.002; // Tune for max speed feel
+                const dragMagnitude = speed * speed * dragFactor;
+                const dragForce = vel.clone().scale(-dragMagnitude / speed);
+                this.body.applyForce(dragForce, this.body.position);
+            }
+
+            // 2. "Penny" Falling Physics
+            // Calculate Tilt: 0 = Upright (Rolling), 1 = Flat (Lying down)
             const axle = new CANNON.Vec3(1, 0, 0);
             this.body.quaternion.vmult(axle, axle);
-            
-            // Dot product with World Up (0,1,0)
-            // 0 = Upright, 1 = Flat
             const tilt = Math.abs(axle.dot(new CANNON.Vec3(0, 1, 0)));
             
-            // 1. Stabilization at High Speed
-            if (speed > 8) {
-                // If reasonably upright, keep damping low
-                this.body.angularDamping = 0.05;
+            // If the donut falls over (high tilt), friction should skyrocket.
+            // This stops it from sliding forever on its side.
+            if (tilt > 0.4) {
+                // Smooth transition from rolling to grinding
+                // Map tilt 0.4->0.9 to damping 0.0->0.9
+                let grind = Math.max(0, (tilt - 0.4) * 2); 
+                grind = Math.min(1, grind);
                 
-                // Note: Cylinder shape naturally stabilizes somewhat due to gyroscopic moments 
-                // if the timestep is small enough, but we rely on speed here.
+                // High linear damping simulates scraping ground
+                this.body.linearDamping = 0.01 + (grind * 0.8);
+                // High angular damping stops the spin
+                this.body.angularDamping = 0.01 + (grind * 0.9);
+            } else {
+                // Free rolling
+                this.body.linearDamping = 0.0; 
+                this.body.angularDamping = 0.01;
             }
-            
-            // 2. Fall Transition (Wobble)
-            if (speed < 6) {
-                // If slowing down, increase damping based on tilt to simulate side friction/scraping
-                const frictionFactor = tilt * tilt; // Quadratic curve
-                // Much gentler damping so it doesn't feel like "mud"
-                this.body.angularDamping = 0.01 + (frictionFactor * 0.5);
-                this.body.linearDamping = (frictionFactor * 0.2);
-                
-                // Removed artificial destabilization torque to prevent "glitches"
-                // Gravity and physics errors are enough to make it fall naturally
+
+            // 3. Stabilization Helper
+            // At high speeds, help the donut stay upright slightly to prevent frustrating early falls
+            if (speed > 15 && tilt < 0.3) {
+                this.body.angularDamping = 0.1;
+            }
+
+            // 4. Hard Speed Cap (Safety)
+            // Prevents tunneling through terrain
+            if (speed > 80) {
+                vel.scale(80 / speed);
+                this.body.velocity.copy(vel);
             }
 
             // Sync Visuals

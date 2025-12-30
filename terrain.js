@@ -26,27 +26,31 @@ export class InfiniteTerrain {
 
     // Mathematical definition of the mountain shape
     getHeightAt(x, z) {
-        // Base Slope: Downhill as Z increases (Moving towards +Z)
-        // Increased slope for speed and momentum
-        let y = -z * 0.5; 
-
-        // Add a "bowl" shape so the player stays in the middle naturally
-        y += Math.pow(Math.abs(x) / 15, 2.5);
-
-        // Reduce noise near center to prevent "uphill" bumps in the main path
-        // Widen the safe zone (x / 30) for a better gameplay lane
-        const centerSafe = Math.max(0, 1 - Math.abs(x) / 30); 
-        // 0% noise at dead center for silky smooth rolling
-        const noiseScale = 1 - centerSafe; 
-
-        // Smoother, lower frequency hills to prevent collision glitches
-        y += Math.sin(z * 0.03) * 1.5 * noiseScale;
+        // 1. Z-Axis Profile: Alternating Steep Drops and Flat Straightaways
+        // We use a math function where the derivative (slope) oscillates.
+        // Base slope is linear descent, Sine wave modulates it.
+        // y = -A*z + B*sin(f*z)
+        // Slope = -A + B*f*cos(f*z)
+        // We want Slope to range from roughly -1.0 (steep) to -0.05 (almost flat).
         
-        // Gentle banking on sides
-        y += Math.cos(x * 0.05) * 2 * noiseScale;
+        const freq = 0.015; // Wavelength ~ 420 units
+        // To get flat spots, the positive cosine part must almost cancel the negative constant.
+        // constant = -0.5
+        // cosine amp = 0.45
+        // slope range: [-0.95, -0.05] (Always downhill, never uphill)
+        // Amplitude B = 0.45 / freq = 30
         
-        // Removed high frequency noise that causes cylinder jitter/glitches
-        
+        let y = -0.5 * z + 30 * Math.sin(z * freq);
+
+        // 2. X-Axis Profile: "Pipe" or "Bowl" shape
+        // Keeps player centered.
+        // Gentle quadratic curve.
+        y += Math.pow(x / 15, 2) * 1.5;
+
+        // 3. Banking/Camber
+        // Bank turns slightly based on the terrain waviness to keep it interesting visually
+        y += Math.cos(z * 0.02) * Math.sin(x * 0.05) * 2;
+
         return y;
     }
 
