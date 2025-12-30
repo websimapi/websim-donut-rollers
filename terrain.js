@@ -16,9 +16,9 @@ export class InfiniteTerrain {
         this.mat.friction = 0.3;
 
         // Initial platform
+        this.createChunk(this.chunkSize, true);
         this.createChunk(0, true);
         this.createChunk(-this.chunkSize, false);
-        this.createChunk(-this.chunkSize * 2, false);
     }
 
     createChunk(zPosition, isStartPlatform) {
@@ -87,15 +87,14 @@ export class InfiniteTerrain {
         mesh.position.set(0, -2, zPosition - (this.chunkSize/2)); // Adjust pivot
         
         // Tilt the whole chunk for the hill effect
-        // Instead of tilting mesh, we built slope into the height data relative to global Z? 
-        // Actually, easiest way is to rotate the mesh slightly.
-        const slopeAngle = 0.2; // Radians down
-        mesh.rotation.x -= slopeAngle;
+        const slopeAngle = 0.2; // Radians down (-Z direction)
+        // Rotate positive X to tilt +Z up (so -Z is downhill)
+        mesh.rotation.x += slopeAngle;
         
         // Adjust Y position so it connects to previous
-        // This is tricky with rotation.
-        // Simplification: Just step down Y based on Z
-        mesh.position.y = (zPosition * Math.sin(slopeAngle));
+        // Offset so that at Z=0 the surface is at Base Level
+        const yOffset = (this.chunkSize/2) * Math.sin(slopeAngle);
+        mesh.position.y = (zPosition * Math.sin(slopeAngle)) - yOffset;
         
         this.scene.add(mesh);
         mesh.receiveShadow = true;

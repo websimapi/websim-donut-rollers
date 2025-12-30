@@ -60,7 +60,7 @@ export class Donut {
         this.eyesGroup.add(leftEye);
         this.eyesGroup.add(rightEye);
         // Position eyes on the front surface of the torus
-        this.eyesGroup.position.z = 0.5; // Touch the surface (radius 0.45 + offset)
+        this.eyesGroup.position.z = 0.42; // Touch the surface (radius 0.45 + offset)
         this.eyesGroup.position.y = 0;
         this.meshGroup.add(this.eyesGroup);
 
