@@ -153,8 +153,18 @@ export class Donut {
 
     boostForward() {
         if (!this.isRolling) return;
-        const impulse = new CANNON.Vec3(0, 0, 40); // forward along +Z
+
+        // Smaller forward impulse so boosts don't overpower gravity-based motion
+        const linearBoost = 8; // was 40
+        const impulse = new CANNON.Vec3(0, 0, linearBoost); // forward along +Z
         this.body.applyImpulse(impulse, this.body.position);
+
+        // Add a gentle angular boost aligned with current forward direction
+        const forwardZ = this.body.velocity.z;
+        const dir = forwardZ >= 0 ? 1 : -1; // match current travel direction
+        const angularBoost = 2.5;
+        this.body.angularVelocity.x += dir * angularBoost;
+
         this.assets.playSound('jump');
     }
 
