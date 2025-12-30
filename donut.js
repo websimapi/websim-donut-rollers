@@ -61,8 +61,8 @@ export class Donut {
         q.setFromAxisAngle(new CANNON.Vec3(0,0,1), -Math.PI / 2);
         
         this.body = new CANNON.Body({
-            mass: 12, // Sufficient mass for momentum
-            material: new CANNON.Material({ friction: 0.5, restitution: 0.2 })
+            mass: 30, // Heavier mass for more stable simulation
+            material: new CANNON.Material({ friction: 0.1, restitution: 0.1 }) // Low friction for smooth rolling
         });
         
         // Add shape with offset rotation
@@ -70,9 +70,9 @@ export class Donut {
         
         this.body.position.copy(position);
         
-        // Damping starts low for rolling
-        this.body.linearDamping = 0.02;
-        this.body.angularDamping = 0.02;
+        // Zero damping for pure gravity physics
+        this.body.linearDamping = 0.0;
+        this.body.angularDamping = 0.01;
 
         // Continuous Collision Detection
         this.body.ccdSpeedThreshold = 1;
@@ -141,10 +141,10 @@ export class Donut {
         this.world.addBody(this.body);
         
         // Launch Physics
-        // Forward is +Z
-        this.body.velocity.set(0, 0, 15);
+        // Forward is +Z. Start with higher speed to overcome initial friction
+        this.body.velocity.set(0, 0, 25);
         // Angular Velocity +X (Forward Roll)
-        this.body.angularVelocity.set(10, 0, 0);
+        this.body.angularVelocity.set(15, 0, 0);
 
         // Sounds
         this.assets.playSound('jump');
@@ -188,14 +188,12 @@ export class Donut {
             if (speed < 6) {
                 // If slowing down, increase damping based on tilt to simulate side friction/scraping
                 const frictionFactor = tilt * tilt; // Quadratic curve
-                this.body.angularDamping = 0.1 + (frictionFactor * 0.8);
-                this.body.linearDamping = 0.05 + (frictionFactor * 0.5);
+                // Much gentler damping so it doesn't feel like "mud"
+                this.body.angularDamping = 0.01 + (frictionFactor * 0.5);
+                this.body.linearDamping = (frictionFactor * 0.2);
                 
-                // If perfectly upright but slow, initiate fall (unstable equilibrium)
-                if (tilt < 0.05 && speed < 3) {
-                    const destabilize = (Math.random() - 0.5) * 5;
-                    this.body.applyTorque(new CANNON.Vec3(0, 0, destabilize));
-                }
+                // Removed artificial destabilization torque to prevent "glitches"
+                // Gravity and physics errors are enough to make it fall naturally
             }
 
             // Sync Visuals

@@ -34,16 +34,18 @@ export class InfiniteTerrain {
         y += Math.pow(Math.abs(x) / 15, 2.5);
 
         // Reduce noise near center to prevent "uphill" bumps in the main path
-        // This ensures a smooth runway for the donut
-        const centerSafe = Math.max(0, 1 - Math.abs(x) / 20); // 1 at center, 0 at x=20
-        const noiseScale = 1 - (centerSafe * 0.8); // 20% noise at center, 100% at edges
+        // Widen the safe zone (x / 30) for a better gameplay lane
+        const centerSafe = Math.max(0, 1 - Math.abs(x) / 30); 
+        // 0% noise at dead center for silky smooth rolling
+        const noiseScale = 1 - centerSafe; 
 
-        // Add noise/hills with scaling
-        y += Math.sin(z * 0.05) * 2 * noiseScale;
-        y += Math.cos(x * 0.1) * 1;
+        // Smoother, lower frequency hills to prevent collision glitches
+        y += Math.sin(z * 0.03) * 1.5 * noiseScale;
         
-        // High frequency roughness
-        y += Math.sin(z * 0.2) * 0.5 * noiseScale;
+        // Gentle banking on sides
+        y += Math.cos(x * 0.05) * 2 * noiseScale;
+        
+        // Removed high frequency noise that causes cylinder jitter/glitches
         
         return y;
     }

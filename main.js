@@ -38,8 +38,10 @@ scene.add(dirLight);
 
 // Physics World
 const world = new CANNON.World();
-world.gravity.set(0, -9.82 * 1.5, 0); // Slightly stronger gravity for snappy but stable motion
-world.solver.iterations = 20; // Reduce tunneling through terrain
+world.gravity.set(0, -25, 0); // Strong, realistic gravity pull to ensure slope adherence
+world.solver.iterations = 30; // High iterations for stable heightfield collisions
+world.defaultContactMaterial.friction = 0.3; // Lower default friction to prevent sticky "glitches"
+world.defaultContactMaterial.restitution = 0.2;
 
 // --- Game State ---
 let gameState = 'IDLE'; // IDLE, STARTING, PLAYING, GAME_OVER
@@ -94,8 +96,8 @@ const donut = new Donut(scene, world, new THREE.Vector3(0, startY, 0), assets);
 
 // --- Input Handling ---
 function handleInput(x) {
-    // Invert steering so dragging right moves right intuitively
-    input.x = -x;
+    // Direct steering mapping: Right drag (+x) = Right force (+x)
+    input.x = x;
 }
 
 window.addEventListener('touchmove', (e) => {
@@ -170,20 +172,15 @@ function animate() {
 
     if (gameState === 'PLAYING') {
         // Input Physics
-        // Move sideways (steering already inverted in handleInput)
-        const sidewaysForce = 40; // Increased for heavier cylinder
+        // Move sideways (Direct mapping)
+        const sidewaysForce = 60; 
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
-        // Let gravity and terrain slope do ALL the forward work.
-        // We don't apply extra downhill pushes so the donut can
-        // slow down and fall naturally like a coin.
+        // Pure Physics: We do not touch velocity manually.
+        // Gravity and Terrain slope provide all acceleration.
+        // This removes any "artificial force" feel.
 
         const vel = donut.body.velocity;
-
-        // Soften any uphill drift instead of hard-clamping
-        if (vel.z < 0) {
-            vel.z *= 0.8; // Allow slight rollback for realism but dampen it
-        }
 
         // Update Score (distance travelled downhill)
         const zPos = donut.meshGroup.position.z;
