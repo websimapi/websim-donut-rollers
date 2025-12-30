@@ -120,6 +120,7 @@ function startGame() {
     
     // UI Updates
     const startText = document.getElementById('tap-to-start');
+    document.getElementById('title-screen').style.display = 'none';
     startText.style.opacity = '0';
     setTimeout(() => {
         startText.style.display = 'none';

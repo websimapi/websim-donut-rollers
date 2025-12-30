@@ -121,8 +121,8 @@ export class Donut {
     startRolling() {
         this.isRolling = true;
         
-        // Reset Visual Rotation so physics can take over
-        this.meshGroup.rotation.set(0,0,0);
+        // Reset Visual Rotation so physics can take over, rotated 90° around Y
+        this.meshGroup.rotation.set(0, Math.PI / 2, 0);
 
         // Ensure body is at the current visual position before adding
         // Check for validity
