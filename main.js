@@ -43,7 +43,8 @@ world.solver.iterations = 20; // Reduce tunneling through terrain
 
 // --- Game State ---
 let gameState = 'IDLE'; // IDLE, STARTING, PLAYING
-let input = { x: 0 }; // -1 to 1
+let input = { x: 0, forwardImpulse: 0 };
+let lastTouchY = 0;
 
 // --- Audio System ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -102,12 +103,27 @@ window.addEventListener('touchmove', (e) => {
         e.preventDefault();
     }
     const touchX = e.touches[0].clientX;
+    const touchY = e.touches[0].clientY;
+    
+    // Steering
     handleInput((touchX / window.innerWidth) * 2 - 1);
+
+    // Swipe impulse (upward movement on screen is negative Y delta, but we want positive force)
+    const deltaY = lastTouchY - touchY;
+    if (deltaY > 0) {
+        input.forwardImpulse += deltaY * 3; // Multiplier for swipe sensitivity
+    }
+    lastTouchY = touchY;
+
 }, { passive: false });
 
 window.addEventListener('mousemove', (e) => {
     if (gameState === 'PLAYING') {
         handleInput((e.clientX / window.innerWidth) * 2 - 1);
+        // Mouse drag boost
+        if (e.buttons === 1 && e.movementY < 0) {
+             input.forwardImpulse += Math.abs(e.movementY) * 3;
+        }
     }
 });
 
@@ -136,10 +152,18 @@ function startGame() {
     gameState = 'PLAYING';
 }
 
-window.addEventListener('click', startGame);
+window.addEventListener('click', (e) => {
+    if (gameState === 'IDLE') {
+        startGame();
+    } else if (gameState === 'PLAYING') {
+        input.forwardImpulse += 100; // Tap boost
+    }
+});
+
 window.addEventListener('touchstart', (e) => {
+    lastTouchY = e.touches[0].clientY;
     // Prevent default touch behaviors on canvas
-    if(e.target.tagName !== 'BUTTON') {
+    if(gameState === 'IDLE' && e.target.tagName !== 'BUTTON') {
        startGame();
     }
 }, { passive: false });
@@ -170,11 +194,10 @@ function animate() {
         const sidewaysForce = 30;
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
-        // Always push forward (downhill is negative Z)
-        // If speed is low, boost it
-        const vel = donut.body.velocity;
-        if (vel.z > -40) { // Max speed cap / acceleration limit
-             donut.applyForce(new CANNON.Vec3(0, 0, -15));
+        // Manual Boost (Swipe/Tap)
+        if (input.forwardImpulse > 0) {
+             donut.applyForce(new CANNON.Vec3(0, 0, -input.forwardImpulse));
+             input.forwardImpulse = 0;
         }
 
         // Update Score

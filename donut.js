@@ -108,8 +108,8 @@ export class Donut {
             position: new CANNON.Vec3(position.x, position.y, position.z),
             material: new CANNON.Material({ friction: 0.1, restitution: 0.5 })
         });
-        this.body.linearDamping = 0.1;
-        this.body.angularDamping = 0.1;
+        this.body.linearDamping = 0.2;
+        this.body.angularDamping = 0.4;
 
         // Enable CCD to prevent tunneling
         this.body.ccdSpeedThreshold = 1;
