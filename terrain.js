@@ -26,24 +26,28 @@ export class InfiniteTerrain {
     // Mathematical definition of the mountain shape
     getHeightAt(x, z) {
         // Base Slope: Downhill as Z decreases
-        // We want Z decreasing to go DOWN.
-        let y = z * 0.4;
+        // Increased slope for speed and momentum
+        let y = z * 0.5; 
 
         // Flatten the start area slightly to ensure a safe landing pad
         if (z > -10 && z < 10) {
-            // Slight smoothing around origin
-            y = (z * 0.4) * 0.5; // Flatter slope at start
+            y = (z * 0.5) * 0.5; 
         }
 
         // Add a "bowl" shape so the player stays in the middle naturally
         y += Math.pow(Math.abs(x) / 15, 2.5);
 
-        // Add noise/hills
-        y += Math.sin(z * 0.05) * 2;
+        // Reduce noise near center to prevent "uphill" bumps in the main path
+        // This ensures a smooth runway for the donut
+        const centerSafe = Math.max(0, 1 - Math.abs(x) / 20); // 1 at center, 0 at x=20
+        const noiseScale = 1 - (centerSafe * 0.8); // 20% noise at center, 100% at edges
+
+        // Add noise/hills with scaling
+        y += Math.sin(z * 0.05) * 2 * noiseScale;
         y += Math.cos(x * 0.1) * 1;
         
         // High frequency roughness
-        y += Math.sin(z * 0.2) * 0.5;
+        y += Math.sin(z * 0.2) * 0.5 * noiseScale;
         
         return y;
     }

@@ -108,8 +108,8 @@ export class Donut {
             position: new CANNON.Vec3(position.x, position.y, position.z),
             material: new CANNON.Material({ friction: 0.1, restitution: 0.5 })
         });
-        this.body.linearDamping = 0.2;
-        this.body.angularDamping = 0.4;
+        this.body.linearDamping = 0.1;
+        this.body.angularDamping = 0.1;
 
         // Enable CCD to prevent tunneling
         this.body.ccdSpeedThreshold = 1;
@@ -135,9 +135,10 @@ export class Donut {
         
         this.world.addBody(this.body);
         
-        // Initial push - reduced speed to prevent immediate clipping
-        this.body.velocity.set(0, 2, -10);
-        this.body.angularVelocity.set(5, 0, 0);
+        // Initial push - Stronger launch
+        this.body.velocity.set(0, -5, -60);
+        // Spin it forward immediately
+        this.body.angularVelocity.set(20, 0, 0);
 
         // Play sounds
         this.assets.playSound('jump');
@@ -162,6 +163,12 @@ export class Donut {
         } else {
             // Rolling Logic
             
+            // Gyroscopic Stabilization
+            // Dampen rotation on Z (tilt) and Y (yaw) to mimic a balanced wheel
+            // We want to preserve X (forward roll)
+            this.body.angularVelocity.z *= 0.90; // Resist falling sideways
+            this.body.angularVelocity.y *= 0.95; // Resist spinning out
+            
             // Sync visual to physics
             if (!isNaN(this.body.position.x)) {
                  this.meshGroup.position.copy(this.body.position);
@@ -175,10 +182,6 @@ export class Donut {
             } else {
                 this.limbsGroup.visible = false;
             }
-
-            // Keep eyes attached but maybe rotate them? 
-            // Actually, if the torus rolls, the eyes roll with it, which is physically correct but dizzying.
-            // Let's keep them rolling.
         }
     }
 

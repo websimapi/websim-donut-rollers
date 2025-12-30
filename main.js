@@ -43,8 +43,7 @@ world.solver.iterations = 20; // Reduce tunneling through terrain
 
 // --- Game State ---
 let gameState = 'IDLE'; // IDLE, STARTING, PLAYING
-let input = { x: 0, forwardImpulse: 0 };
-let lastTouchY = 0;
+let input = { x: 0 }; // -1 to 1
 
 // --- Audio System ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -103,27 +102,12 @@ window.addEventListener('touchmove', (e) => {
         e.preventDefault();
     }
     const touchX = e.touches[0].clientX;
-    const touchY = e.touches[0].clientY;
-    
-    // Steering
     handleInput((touchX / window.innerWidth) * 2 - 1);
-
-    // Swipe impulse (upward movement on screen is negative Y delta, but we want positive force)
-    const deltaY = lastTouchY - touchY;
-    if (deltaY > 0) {
-        input.forwardImpulse += deltaY * 3; // Multiplier for swipe sensitivity
-    }
-    lastTouchY = touchY;
-
 }, { passive: false });
 
 window.addEventListener('mousemove', (e) => {
     if (gameState === 'PLAYING') {
         handleInput((e.clientX / window.innerWidth) * 2 - 1);
-        // Mouse drag boost
-        if (e.buttons === 1 && e.movementY < 0) {
-             input.forwardImpulse += Math.abs(e.movementY) * 3;
-        }
     }
 });
 
@@ -152,18 +136,10 @@ function startGame() {
     gameState = 'PLAYING';
 }
 
-window.addEventListener('click', (e) => {
-    if (gameState === 'IDLE') {
-        startGame();
-    } else if (gameState === 'PLAYING') {
-        input.forwardImpulse += 100; // Tap boost
-    }
-});
-
+window.addEventListener('click', startGame);
 window.addEventListener('touchstart', (e) => {
-    lastTouchY = e.touches[0].clientY;
     // Prevent default touch behaviors on canvas
-    if(gameState === 'IDLE' && e.target.tagName !== 'BUTTON') {
+    if(e.target.tagName !== 'BUTTON') {
        startGame();
     }
 }, { passive: false });
@@ -194,10 +170,12 @@ function animate() {
         const sidewaysForce = 30;
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
-        // Manual Boost (Swipe/Tap)
-        if (input.forwardImpulse > 0) {
-             donut.applyForce(new CANNON.Vec3(0, 0, -input.forwardImpulse));
-             input.forwardImpulse = 0;
+        // Always push forward (downhill is negative Z)
+        // If speed is low, boost it
+        const vel = donut.body.velocity;
+        // Increase Max speed cap / acceleration limit for faster gameplay
+        if (vel.z > -80) { 
+             donut.applyForce(new CANNON.Vec3(0, 0, -30));
         }
 
         // Update Score
@@ -226,23 +204,17 @@ function animate() {
         const radius = 10;
         camera.position.x = Math.sin(time * 0.3) * radius;
         camera.position.z = Math.cos(time * 0.3) * radius;
-        camera.position.y = donut.meshGroup.position.y + 5;
-        camera.lookAt(donut.meshGroup.position);
+        if (!isNaN(donut.meshGroup.position.y)) {
+             camera.position.y = donut.meshGroup.position.y + 5;
+             camera.lookAt(donut.meshGroup.position);
+        }
     } else if (gameState === 'PLAYING') {
         const targetPos = donut.meshGroup.position;
         
         // Safety check to prevent camera NaN bugs causing black/blue screen
         if (targetPos && !isNaN(targetPos.x) && !isNaN(targetPos.y) && !isNaN(targetPos.z)) {
-            // Check for falling off world
-            if (targetPos.y < -500) {
-                // Respawn logic or just cap camera?
-                // For now, let's keep camera looking at something sane
-            }
-
             // Offset camera relative to slope
-            // Looking down from behind
-            // As we speed up, pull back?
-            const offset = new THREE.Vector3(0, 10, 15); 
+            const offset = new THREE.Vector3(0, 12, 18); 
             
             // Smooth follow
             const idealPos = new THREE.Vector3().copy(targetPos).add(offset);
