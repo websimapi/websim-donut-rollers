@@ -67,8 +67,8 @@ export class Donut {
         q.setFromAxisAngle(new CANNON.Vec3(0,0,1), -Math.PI / 2);
         
         this.body = new CANNON.Body({
-            mass: 30, // Heavier mass for more stable simulation
-            material: new CANNON.Material({ friction: 0.1, restitution: 0.1 }) // Low friction for smooth rolling
+            mass: 40, // Heavier
+            material: new CANNON.Material({ friction: 0.1, restitution: 0.0 }) // Zero restitution for squishy/heavy feel
         });
         
         // Add shape with offset rotation
@@ -304,16 +304,33 @@ export class Donut {
                 this.body.applyForce(dragForce, this.body.position);
             }
 
-            // 5. Hard Falling Friction (Penny Stop)
-            if (tilt > 0.5) {
-                // If extremely tilted (falling flat like a penny), increase friction significantly
-                this.body.angularDamping = 0.8;
-                this.body.linearDamping = 0.8;
+            // 5. Hard Falling Friction ("Penny Falling" logic)
+            // If the donut tilts out of orientation, we want it to feel heavy and pulled down,
+            // not bouncy or floaty.
+            if (tilt > 0.35) {
+                // Aggressively kill upward velocity (No bouncing up)
+                if (this.body.velocity.y > 0.5) {
+                    this.body.velocity.y *= 0.1; 
+                }
+
+                // Apply extra downward force ("pulled down")
+                // proportional to how much we are tilted
+                const extraGravity = new CANNON.Vec3(0, -50 * this.body.mass * tilt, 0);
+                this.body.applyForce(extraGravity, this.body.position);
+
+                // High damping to simulate the energy loss of a rattling coin/flat tire
+                this.body.angularDamping = 0.5 + (tilt * 0.4); 
+                this.body.linearDamping = 0.1 + (tilt * 0.5);
                 
                 // If spinning rapidly while flat (top-spin glitch), kill rotation immediately
-                if (this.body.angularVelocity.length() > 15) {
-                    this.body.angularDamping = 0.99;
+                // preventing "helicopter" launches
+                if (this.body.angularVelocity.length() > 10) {
+                    this.body.angularDamping = 0.9;
                 }
+            } else {
+                // Normal rolling
+                this.body.angularDamping = 0.1;
+                this.body.linearDamping = 0.0;
             }
 
             // --- Glitch Prevention & Stabilization ---
@@ -337,10 +354,11 @@ export class Donut {
                 this.body.applyForce(new CANNON.Vec3(0, -100 * this.body.mass, 0), this.body.position);
             }
 
-            // Absolute Safety: Cap vertical velocity only slightly to prevent infinite energy bugs
-            // But assume Gravity is the main downward force.
-            if (this.body.velocity.y > 50) {
-                 this.body.velocity.y = 50; 
+            // Absolute Safety: Cap vertical velocity
+            // If we are unstable, cap it very low. If stable, cap it high.
+            const maxRiseSpeed = (this.isUnstable || tilt > 0.3) ? 2 : 50;
+            if (this.body.velocity.y > maxRiseSpeed) {
+                 this.body.velocity.y = maxRiseSpeed; 
             }
             // Removed artificial downward force to respect true gravity physics
             
@@ -372,7 +390,22 @@ export class Donut {
                  this.meshGroup.quaternion.copy(this.body.quaternion);
             }
             
-            // Visual feedback for Instability
+            // Visual feedback for Instability & Squish
+            // Add a subtle squish scale based on impact/gravity/instability
+            const baseY = 1.0;
+            let squish = 0;
+            
+            // Squish when hitting ground hard (based on Y velocity change approximation or just gravity force)
+            // Simple visual: if unstable, flatten visual mesh slightly to look "heavy"
+            if (tilt > 0.3) {
+                 squish = 0.2 * tilt;
+            }
+
+            const targetScaleY = baseY - squish;
+            const targetScaleXZ = 1.0 + (squish * 0.5); // Volume preservationish
+
+            this.meshGroup.scale.lerp(new THREE.Vector3(targetScaleXZ, targetScaleY, targetScaleXZ), 0.1);
+
             if (this.isUnstable) {
                 this.meshGroup.children[0].material.color.setHex(0xffcccc); // Red tint
             } else {

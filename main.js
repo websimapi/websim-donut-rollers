@@ -38,10 +38,10 @@ scene.add(dirLight);
 
 // Physics World
 const world = new CANNON.World();
-world.gravity.set(0, -25, 0); // Strong, realistic gravity pull to ensure slope adherence
+world.gravity.set(0, -35, 0); // Increased gravity for heavier feel
 world.solver.iterations = 30; // High iterations for stable heightfield collisions
-world.defaultContactMaterial.friction = 0.3; // Lower default friction to prevent sticky "glitches"
-world.defaultContactMaterial.restitution = 0.2;
+world.defaultContactMaterial.friction = 0.15; // Lower friction to prevent catching/launching
+world.defaultContactMaterial.restitution = 0.0; // Zero restitution = No bounce (squishy)
 
 // --- Game State ---
 let gameState = 'IDLE'; // IDLE, STARTING, PLAYING, GAME_OVER
