@@ -106,10 +106,11 @@ export class Donut {
             mass: mass,
             shape: new CANNON.Sphere(radius),
             position: new CANNON.Vec3(position.x, position.y, position.z),
-            material: new CANNON.Material({ friction: 0.1, restitution: 0.5 })
+            material: new CANNON.Material({ friction: 0.15, restitution: 0.4 })
         });
-        this.body.linearDamping = 0.1;
-        this.body.angularDamping = 0.1;
+        // Slightly higher damping so motion feels physical but not jittery
+        this.body.linearDamping = 0.15;
+        this.body.angularDamping = 0.15;
 
         // Enable CCD to prevent tunneling
         this.body.ccdSpeedThreshold = 1;
@@ -136,11 +137,11 @@ export class Donut {
         
         this.world.addBody(this.body);
         
-        // Initial push - Stronger launch
+        // Initial push - moderate launch, let gravity + slope take over
         // Moving towards +Z (Forward/Downhill)
-        this.body.velocity.set(0, -5, 60);
+        this.body.velocity.set(0, 0, 15);
         // Spin it forward immediately (Positive X for forward roll along +Z)
-        this.body.angularVelocity.set(20, 0, 0);
+        this.body.angularVelocity.set(6, 0, 0);
 
         // Play sounds
         this.assets.playSound('jump');
@@ -164,12 +165,18 @@ export class Donut {
             this.legR.rotation.z = Math.cos(time * 4) * 0.2;
         } else {
             // Rolling Logic
+
+            // Compute current speed to adapt behaviour
+            const v = this.body.velocity;
+            const speed = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
             
-            // Gyroscopic Stabilization
-            // Dampen rotation on Z (tilt) and Y (yaw) to mimic a balanced wheel
-            // We want to preserve X (forward roll)
-            this.body.angularVelocity.z *= 0.90; // Resist falling sideways
-            this.body.angularVelocity.y *= 0.95; // Resist spinning out
+            // Gyroscopic Stabilization:
+            // While moving fast, keep the wheel fairly upright for control.
+            // As it slows down, allow it to wobble and fall like a coin.
+            if (speed > 5) {
+                this.body.angularVelocity.z *= 0.90; // Resist falling sideways at high speed
+                this.body.angularVelocity.y *= 0.95; // Resist spinning out
+            }
             
             // Sync visual to physics
             if (!isNaN(this.body.position.x)) {

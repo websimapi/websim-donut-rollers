@@ -38,7 +38,7 @@ scene.add(dirLight);
 
 // Physics World
 const world = new CANNON.World();
-world.gravity.set(0, -9.82 * 2, 0); // Heavier gravity for snappier feeling
+world.gravity.set(0, -9.82 * 1.5, 0); // Slightly stronger gravity for snappy but stable motion
 world.solver.iterations = 20; // Reduce tunneling through terrain
 
 // --- Game State ---
@@ -168,27 +168,23 @@ function animate() {
         
         // Input Physics
         // Move sideways (steering already inverted in handleInput)
-        const sidewaysForce = 30;
+        const sidewaysForce = 25;
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
-        // Always push forward (downhill is positive Z)
+        // Let gravity and terrain slope do most of the work.
+        // Apply only a gentle forward nudge if we are nearly stopped
+        // to keep the run flowing without glitchy acceleration.
         const vel = donut.body.velocity;
 
-        // Prevent uphill motion: clamp any backward (negative Z) velocity
+        // Soften any uphill drift instead of hard-clamping
         if (vel.z < 0) {
-            vel.z = 0;
+            vel.z *= 0.5;
         }
 
-        // Maintain a minimum downhill speed and cap the maximum
-        const minDownhillSpeed = 20;
-        const maxDownhillSpeed = 80;
-
-        if (vel.z < minDownhillSpeed) {
-            // Stronger push when too slow
-            donut.applyForce(new CANNON.Vec3(0, 0, 80));
-        } else if (vel.z < maxDownhillSpeed) {
-            // Gentle push as we approach max speed
-            donut.applyForce(new CANNON.Vec3(0, 0, 30));
+        // If we're moving very slowly, add a small downhill push
+        const minRollSpeed = 5;
+        if (vel.z < minRollSpeed) {
+            donut.applyForce(new CANNON.Vec3(0, 0, 40));
         }
 
         // Update Score
