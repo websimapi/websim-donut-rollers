@@ -157,74 +157,60 @@ export class Donut {
 
     // --- New Mechanics ---
 
-    attemptBoost() {
-        if (!this.isRolling || this.isUnstable || this.isFlattening) return;
-
-        // Calculate Forward Direction
-        // Forward = Cross(Axle, WorldUp)
-        const axle = new CANNON.Vec3(1, 0, 0);
-        this.body.quaternion.vmult(axle, axle);
-        const up = new CANNON.Vec3(0, 1, 0);
+    boostWithDirection(vx, vy) {
+        // vx, vy are screen space vectors (x: Right, y: Down)
+        // Map to World: +x -> +WorldX, -y (Up) -> +WorldZ (Forward)
         
-        const forward = new CANNON.Vec3();
-        axle.cross(up, forward);
-        forward.normalize();
-
-        // Ensure boost is in the direction we are actually moving
-        const vel = this.body.velocity;
-        if (forward.dot(vel) < 0) forward.scale(-1, forward);
-
-        // Boost Magnitude: Base + % of current speed
-        const speed = vel.length();
-        const impulse = 30 + (speed * 0.5); 
-        
-        // Apply Linear Impulse
-        this.body.applyImpulse(forward.scale(impulse), this.body.position);
-
-        // Apply Angular Impulse (Spin Faster)
-        // Torque axis matches Axle direction. 
-        // We want to spin 'forward'. If Axle points Right, and we roll Forward, torque is +X?
-        // Right hand rule: Thumb +X (Right), Fingers curl over Top towards Front.
-        // Yes. So if Axle aligns with global X, +Torque spins forward.
-        // We need to apply torque vector ALONG the axle.
-        // Direction? If forward.cross(Up) is roughly Axle, then positive torque spins forward.
-        const spinDir = forward.cross(up); // Should be roughly parallel to axle
-        if (spinDir.dot(axle) < 0) spinDir.scale(-1, spinDir);
-        
-        const torqueImpulse = 20; 
-        this.body.angularVelocity.vadd(spinDir.scale(torqueImpulse), this.body.angularVelocity);
-
-        this.assets.playSound('jump'); // Feedback
-        
-        // Visual flair could go here (particle burst etc)
-    }
-
-    attemptCorrection(swipeDir) {
-        // swipeDir: -1 (Left) or 1 (Right)
         if (!this.isRolling) return;
 
-        // Only allow strong correction if unstable, or weak if stable
-        const strength = this.isUnstable ? 150 : 30;
-
-        // Corrective Torque
-        // If we swipe Right (+1), we want to roll the donut to the Right.
-        // Roll Right means rotation around -Z (if Z is forward).
-        // Let's use the actual Heading vector.
+        const inputDir = new CANNON.Vec3(vx, 0, -vy);
+        const strength = inputDir.length();
+        if (strength < 0.1) return;
         
-        const axle = new CANNON.Vec3(1, 0, 0);
-        this.body.quaternion.vmult(axle, axle);
-        const up = new CANNON.Vec3(0, 1, 0);
-        const heading = new CANNON.Vec3();
-        axle.cross(up, heading); // Vector pointing forward
-        heading.normalize();
+        inputDir.normalize();
 
-        // Torque vector along Heading controls "Roll" (banking)
-        // Right Hand Rule: Thumb along Heading.
-        // If Heading is +Z. Torque +Z rolls "Left". Torque -Z rolls "Right".
-        // So Swipe Right (+1) -> Torque -Heading.
-        const torqueVec = heading.scale(-swipeDir * strength);
+        // 1. Force Auto-Align Orientation
+        // We want Body Local Z (Rolling Dir) to face inputDir
+        // We want Body Local X (Axle) to be perpendicular
+        // We want Body Local Y (Radial) to be Up
         
-        this.body.torque.vadd(torqueVec, this.body.torque);
+        const targetZ = new THREE.Vector3(inputDir.x, inputDir.y, inputDir.z);
+        const targetY = new THREE.Vector3(0, 1, 0);
+        const targetX = new THREE.Vector3().crossVectors(targetY, targetZ).normalize();
+        
+        // Re-orthogonalize Z to ensure valid rotation matrix
+        targetZ.crossVectors(targetX, targetY).normalize();
+
+        const tM = new THREE.Matrix4();
+        tM.makeBasis(targetX, targetY, targetZ);
+        const tQ = new THREE.Quaternion();
+        tQ.setFromRotationMatrix(tM);
+
+        // Snap orientation to new direction (Arcade snappy feel)
+        this.body.quaternion.set(tQ.x, tQ.y, tQ.z, tQ.w);
+        this.body.angularVelocity.set(0,0,0); // Reset spin to prevent gyroscope fighting
+
+        // 2. Apply Velocity
+        const currentSpeed = this.body.velocity.length();
+        const boostSpeed = 40 * strength;
+        const newSpeed = Math.max(currentSpeed, 20) + boostSpeed;
+        
+        const newVel = inputDir.scale(newSpeed);
+        newVel.y = Math.max(this.body.velocity.y, 0); // Preserve or reset vertical momentum
+        this.body.velocity.copy(newVel);
+
+        // 3. Apply Spin compatible with new velocity
+        // Omega = V / R. Axis = Local X (which is now targetX)
+        const omegaMag = newSpeed / 1.45; 
+        const omega = new CANNON.Vec3(targetX.x, targetX.y, targetX.z).scale(omegaMag);
+        this.body.angularVelocity.copy(omega);
+
+        // Reset instability flags on correction
+        this.isUnstable = false;
+        this.isFlattening = false;
+        this.flattenFactor = 0;
+
+        this.assets.playSound('jump');
     }
 
     update(time, dt) {

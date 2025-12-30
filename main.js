@@ -96,56 +96,111 @@ const donut = new Donut(scene, world, new THREE.Vector3(0, startY, 0), assets);
 
 // --- Input Handling ---
 function handleInput(x) {
-    // Direct steering mapping: Right drag (+x) = Right force (+x)
     input.x = x;
 }
 
-window.addEventListener('touchmove', (e) => {
-    // Only prevent default if it's the game interaction
-    if (e.target.id === 'game-container' || e.target.tagName === 'BODY') {
-        e.preventDefault();
+// Gesture State
+const gesture = {
+    active: false,
+    startX: 0,
+    startY: 0,
+    points: [],
+    startTime: 0
+};
+const swipePath = document.getElementById('swipe-path');
+
+function updateSwipeVisuals() {
+    if (!gesture.active || gesture.points.length < 2) {
+        swipePath.setAttribute('d', '');
+        return;
     }
-    const touchX = e.touches[0].clientX;
-    handleInput((touchX / window.innerWidth) * 2 - 1);
-}, { passive: false });
+    const d = gesture.points.reduce((acc, p, i) => {
+        return acc + (i === 0 ? `M ${p.x} ${p.y}` : ` L ${p.x} ${p.y}`);
+    }, '');
+    swipePath.setAttribute('d', d);
+}
+
+function endGesture() {
+    if (!gesture.active) return;
+    
+    const dt = performance.now() - gesture.startTime;
+    const endP = gesture.points[gesture.points.length - 1];
+    if (!endP) return;
+
+    const dx = endP.x - gesture.startX;
+    const dy = endP.y - gesture.startY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    
+    if (gameState === 'PLAYING') {
+        if (dist > 30) {
+            // Swipe/Drag Boost
+            const maxDist = 300;
+            // Normalize and clamp vector
+            const vx = Math.min(Math.max(dx / maxDist, -1), 1);
+            const vy = Math.min(Math.max(dy / maxDist, -1), 1);
+            donut.boostWithDirection(vx, vy);
+        } else if (dt < 300) {
+            // Simple Tap - Small forward hop
+            donut.boostWithDirection(0, -0.4); 
+        }
+    }
+
+    gesture.active = false;
+    gesture.points = [];
+    updateSwipeVisuals();
+}
+
+// Mouse Events
+window.addEventListener('mousedown', (e) => {
+    if(e.target.tagName === 'BUTTON') return;
+    gesture.active = true;
+    gesture.startTime = performance.now();
+    gesture.startX = e.clientX;
+    gesture.startY = e.clientY;
+    gesture.points = [{x: e.clientX, y: e.clientY}];
+    updateSwipeVisuals();
+});
 
 window.addEventListener('mousemove', (e) => {
     if (gameState === 'PLAYING') {
         handleInput((e.clientX / window.innerWidth) * 2 - 1);
     }
+    if (gesture.active) {
+        gesture.points.push({x: e.clientX, y: e.clientY});
+        updateSwipeVisuals();
+    }
 });
 
-// Gesture Detection
-let touchStartX = 0;
-let touchStartY = 0;
-let touchStartTime = 0;
+window.addEventListener('mouseup', endGesture);
 
+// Touch Events
 window.addEventListener('touchstart', (e) => {
     if(e.target.tagName === 'BUTTON') return;
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    touchStartTime = performance.now();
+    const t = e.touches[0];
+    gesture.active = true;
+    gesture.startTime = performance.now();
+    gesture.startX = t.clientX;
+    gesture.startY = t.clientY;
+    gesture.points = [{x: t.clientX, y: t.clientY}];
+    updateSwipeVisuals();
+}, { passive: false });
+
+window.addEventListener('touchmove', (e) => {
+    if (e.target.id === 'game-container' || e.target.tagName === 'BODY') {
+        e.preventDefault();
+    }
+    const t = e.touches[0];
+    handleInput((t.clientX / window.innerWidth) * 2 - 1);
+    
+    if (gesture.active) {
+        gesture.points.push({x: t.clientX, y: t.clientY});
+        updateSwipeVisuals();
+    }
 }, { passive: false });
 
 window.addEventListener('touchend', (e) => {
     if(e.target.tagName === 'BUTTON') return;
-    
-    const dt = performance.now() - touchStartTime;
-    const dx = e.changedTouches[0].clientX - touchStartX;
-    const dy = e.changedTouches[0].clientY - touchStartY;
-    
-    if (gameState === 'PLAYING') {
-        // Tap (Short time, little movement)
-        if (dt < 250 && Math.abs(dx) < 30 && Math.abs(dy) < 30) {
-            donut.attemptBoost();
-        }
-        // Swipe (Short time, big movement)
-        else if (dt < 400 && Math.abs(dx) > 50) {
-            // Swipe Right (1) or Left (-1)
-            const swipeDir = Math.sign(dx); 
-            donut.attemptCorrection(swipeDir);
-        }
-    }
+    endGesture();
 }, { passive: false });
 
 function startGame() {
