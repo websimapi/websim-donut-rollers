@@ -12,20 +12,23 @@ export class Donut {
         this.steeringInput = 0;
         this.isUnstable = false;
         this.isFlattening = false;
-        this.flattenFactor = 0; // 0 to 1
-        this.lastBoostTime = 0;
-        this.boostCooldown = 6000; // 6 seconds ms
+        this.flattenFactor = 0;
+        
+        // Boost tracking - following swipe path
+        this.boostActive = false;
+        this.boostDirection = new CANNON.Vec3();
+        this.boostMagnitude = 0;
+        this.boostDuration = 0;
+        this.boostElapsed = 0;
         
         // --- Visuals ---
         this.meshGroup = new THREE.Group();
         this.meshGroup.position.copy(position);
         
         // 1. Torus (Visual Body)
-        // Rotate geometry so the torus "hole" aligns with the X axis.
         const geometry = new THREE.TorusGeometry(1, 0.45, 16, 40);
         geometry.rotateY(Math.PI / 2); 
 
-        // Material setup
         const texture = new THREE.TextureLoader().load('./donut_texture.png');
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
@@ -41,52 +44,36 @@ export class Donut {
         this.torus.castShadow = true;
         this.meshGroup.add(this.torus);
 
-        // 2. Character Features (Eyes & Limbs)
         this._addCharacterFeatures();
-
+        
         // Orient the whole group to face camera initially (Idle state)
-        // Camera looks at Z-. Donut face (X+) should point to Z+.
-        // So rotate Y -90.
         this.meshGroup.rotation.y = -Math.PI / 2;
 
         scene.add(this.meshGroup);
 
         // --- Physics ---
-        // Using a Cylinder for "Penny" physics (Rolling Wheel)
-        // Radius = 1.45 (1 + 0.45)
-        // Width = 0.9 (0.45 * 2)
         const radius = 1.45;
         const width = 0.9;
         
-        // CANNON.Cylinder axis is along Y. 
         const cylinderShape = new CANNON.Cylinder(radius, radius, width, 24);
-        
-        // We want the rolling axis to be the Body's Local X axis.
-        // Rotating the shape -90 degrees around Z axis aligns the Cylinder Y axis with Body X axis.
         const q = new CANNON.Quaternion();
         q.setFromAxisAngle(new CANNON.Vec3(0,0,1), -Math.PI / 2);
         
         this.body = new CANNON.Body({
-            mass: 40, // Heavier
-            material: new CANNON.Material({ friction: 0.1, restitution: 0.0 }) // Zero restitution for squishy/heavy feel
+            mass: 40,
+            material: new CANNON.Material({ friction: 0.1, restitution: 0.0 })
         });
         
-        // Add shape with offset rotation
         this.body.addShape(cylinderShape, new CANNON.Vec3(0,0,0), q);
-        
         this.body.position.copy(position);
         
-        // Low damping for gravity physics, but enough to prevent infinite energy glitch
         this.body.linearDamping = 0.0;
-        this.body.angularDamping = 0.1;
-
-        // Continuous Collision Detection
+        this.body.angularDamping = 0.05;
         this.body.ccdSpeedThreshold = 0.5;
         this.body.ccdIterations = 10;
     }
 
     _addCharacterFeatures() {
-        // Eyes
         this.eyesGroup = new THREE.Group();
         const eyeGeo = new THREE.SphereGeometry(0.12, 16, 16);
         const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
@@ -107,10 +94,9 @@ export class Donut {
         rightEye.add(rightShine);
         
         this.eyesGroup.add(leftEye, rightEye);
-        this.eyesGroup.position.set(0.42, 0, 0); // On the face
+        this.eyesGroup.position.set(0.42, 0, 0);
         this.meshGroup.add(this.eyesGroup);
 
-        // Limbs
         this.limbsGroup = new THREE.Group();
         const limbMat = new THREE.MeshStandardMaterial({ color: 0xd2b48c }); 
         const limbGeo = new THREE.CapsuleGeometry(0.1, 0.6, 4, 8);
@@ -137,7 +123,6 @@ export class Donut {
         this.isUnstable = false;
         this.isFlattening = false;
         
-        // Sync Physics to Visual Start
         this.meshGroup.rotation.set(0, 0, 0); 
         
         if (!isNaN(this.meshGroup.position.y)) {
@@ -147,79 +132,64 @@ export class Donut {
         }
         
         this.world.addBody(this.body);
-        
-        // Launch Physics
         this.body.velocity.set(0, 0, 25);
         this.body.angularVelocity.set(15, 0, 0);
 
-        // Sounds
         this.assets.playSound('jump');
         this.assets.playLoop('roll');
     }
 
-    // --- New Mechanics ---
-
+    // New boost system - no cooldown, follows swipe path
     boostWithDirection(vx, vy) {
-        // vx, vy are screen space vectors (x: Right, y: Down)
-        // Map to World: +x -> +WorldX, -y (Up) -> +WorldZ (Forward)
-        
         if (!this.isRolling) return;
-
-        // Cooldown check
-        const now = performance.now();
-        if (now - this.lastBoostTime < this.boostCooldown) {
-            return;
-        }
-        this.lastBoostTime = now;
-
+        
+        // Map screen space to world (x: Right, -y (Up): Forward)
         const inputDir = new CANNON.Vec3(vx, 0, -vy);
         const strength = inputDir.length();
+        
+        // Minimum threshold for tap
         if (strength < 0.1) return;
         
         inputDir.normalize();
 
-        // 1. Force Auto-Align Orientation
-        // We want Body Local Z (Rolling Dir) to face inputDir
-        // We want Body Local X (Axle) to be perpendicular
-        // We want Body Local Y (Radial) to be Up
+        // Calculate boost based on swipe length
+        // Longer swipe = longer boost duration and stronger magnitude
+        const maxBoostDuration = 0.8; // Max 0.8 seconds
+        const minBoostDuration = 0.15; // Min for tap
+        this.boostDuration = minBoostDuration + (strength * (maxBoostDuration - minBoostDuration));
         
-        const targetZ = new THREE.Vector3(inputDir.x, inputDir.y, inputDir.z);
-        const targetY = new THREE.Vector3(0, 1, 0);
-        const targetX = new THREE.Vector3().crossVectors(targetY, targetZ).normalize();
+        // Boost magnitude scales with swipe length
+        const baseBoost = 15; // Small boost
+        const maxBoost = 35; // Max boost for longest swipe
+        this.boostMagnitude = baseBoost + (strength * (maxBoost - baseBoost));
         
-        // Re-orthogonalize Z to ensure valid rotation matrix
-        targetZ.crossVectors(targetX, targetY).normalize();
-
-        const tM = new THREE.Matrix4();
-        tM.makeBasis(targetX, targetY, targetZ);
-        const tQ = new THREE.Quaternion();
-        tQ.setFromRotationMatrix(tM);
-
-        // Snap orientation to new direction (Auto-correct)
-        this.body.quaternion.set(tQ.x, tQ.y, tQ.z, tQ.w);
-        this.body.angularVelocity.set(0,0,0); // Reset spin to prevent gyroscope fighting
-
-        // 2. Apply Velocity
-        const currentSpeed = this.body.velocity.length();
-        const boostSpeed = 40 * strength;
-        const newSpeed = Math.max(currentSpeed, 20) + boostSpeed;
+        // Set boost direction
+        this.boostDirection.copy(inputDir);
         
-        const newVel = inputDir.scale(newSpeed);
-        // Important: Preserve existing vertical velocity so gravity isn't cancelled
-        newVel.y = this.body.velocity.y; 
-        this.body.velocity.copy(newVel);
+        // Activate boost
+        this.boostActive = true;
+        this.boostElapsed = 0;
+        
+        // Gentle orientation correction (not a snap)
+        const currentDir = new THREE.Vector3(
+            this.body.velocity.x,
+            0,
+            this.body.velocity.z
+        ).normalize();
+        
+        // If we have existing velocity, blend with it
+        if (currentDir.length() > 0.1) {
+            const targetDir = new THREE.Vector3(inputDir.x, 0, inputDir.z);
+            // Blend 30% new direction, 70% current
+            currentDir.lerp(targetDir, 0.3).normalize();
+            this.boostDirection.set(currentDir.x, 0, currentDir.z);
+        }
 
-        // 3. Apply Spin compatible with new velocity
-        // Omega = V / R. Axis = Local X (which is now targetX)
-        const omegaMag = newSpeed / 1.45; 
-        const omega = new CANNON.Vec3(targetX.x, targetX.y, targetX.z).scale(omegaMag);
-        this.body.angularVelocity.copy(omega);
-
-        // Reset instability flags on correction
+        // Reset instability on boost
         this.isUnstable = false;
         this.isFlattening = false;
         this.flattenFactor = 0;
-
+        
         this.assets.playSound('jump');
     }
 
@@ -229,190 +199,166 @@ export class Donut {
             const bounce = Math.sin(time * 3) * 0.1;
             this.meshGroup.position.y = this.body.position.y + bounce;
             
-            // Limb swing
             this.armL.rotation.x = (-Math.PI / 4) + Math.sin(time * 4) * 0.1;
             this.armR.rotation.x = (Math.PI / 4) - Math.sin(time * 4) * 0.1;
             this.legL.rotation.z = Math.sin(time * 4) * 0.2;
             this.legR.rotation.z = Math.cos(time * 4) * 0.2;
         } else {
-            // --- Physics & Mechanics ---
+            // --- Active Boost Application ---
+            if (this.boostActive) {
+                this.boostElapsed += dt;
+                
+                // Apply boost force along the swipe path direction
+                const progress = this.boostElapsed / this.boostDuration;
+                
+                if (progress < 1.0) {
+                    // Smooth boost curve (ease out)
+                    const eased = 1 - Math.pow(1 - progress, 3);
+                    const currentBoost = this.boostMagnitude * (1 - eased);
+                    
+                    // Apply force in boost direction
+                    const force = this.boostDirection.clone().scale(currentBoost * this.body.mass);
+                    this.body.applyForce(force, this.body.position);
+                    
+                    // Apply corresponding angular velocity for rolling
+                    const speed = this.body.velocity.length();
+                    const omegaMag = speed / 1.45;
+                    
+                    // Calculate rolling axis (perpendicular to velocity and up)
+                    const velDir = new CANNON.Vec3(
+                        this.body.velocity.x,
+                        0,
+                        this.body.velocity.z
+                    );
+                    if (velDir.length() > 0.1) {
+                        velDir.normalize();
+                        const up = new CANNON.Vec3(0, 1, 0);
+                        const rollAxis = new CANNON.Vec3();
+                        velDir.cross(up, rollAxis);
+                        rollAxis.normalize();
+                        
+                        // Blend with current angular velocity
+                        const targetOmega = rollAxis.scale(omegaMag);
+                        this.body.angularVelocity.x = this.body.angularVelocity.x * 0.7 + targetOmega.x * 0.3;
+                        this.body.angularVelocity.y = this.body.angularVelocity.y * 0.7 + targetOmega.y * 0.3;
+                        this.body.angularVelocity.z = this.body.angularVelocity.z * 0.7 + targetOmega.z * 0.3;
+                    }
+                } else {
+                    this.boostActive = false;
+                }
+            }
             
-            // 1. Calculate Orientation & Stability
+            // --- Orientation & Stability Check ---
             const axle = new CANNON.Vec3(1, 0, 0);
             this.body.quaternion.vmult(axle, axle);
             const up = new CANNON.Vec3(0, 1, 0);
-            
-            // Tilt: 0 = Vertical, 1 = Flat
             const tilt = Math.abs(axle.dot(up));
             
-            // Stability Threshold (approx 17 degrees -> 0.3 dot product)
-            const wasUnstable = this.isUnstable;
-            this.isUnstable = tilt > 0.3;
+            // Only consider unstable at higher threshold (30 degrees)
+            this.isUnstable = tilt > 0.5;
             
-            // 2. Flattening Logic
+            // --- Flattening Logic (Only when truly stopped) ---
             const angSpeed = this.body.angularVelocity.length();
+            const linearSpeed = this.body.velocity.length();
             
-            // If unstable and slow spinning -> Start flattening sequence
-            if (this.isUnstable && angSpeed < 10) {
+            // Only flatten if BOTH slow rotation AND slow movement AND unstable
+            if (this.isUnstable && angSpeed < 5 && linearSpeed < 3) {
                 this.isFlattening = true;
+            } else {
+                // Quick recovery from flatten state when moving
+                this.isFlattening = false;
             }
             
             if (this.isFlattening) {
-                this.flattenFactor = Math.min(1, this.flattenFactor + dt * 0.5);
+                this.flattenFactor = Math.min(1, this.flattenFactor + dt * 0.4);
                 
-                // Exponential drag
-                this.body.linearDamping = 0.1 + (this.flattenFactor * 0.8);
-                this.body.angularDamping = 0.1 + (this.flattenFactor * 0.8);
-                
-                // Tipping Torque: Push it over!
-                // Apply torque perpendicular to axle and up (Heading axis) to increase tilt
-                // If Axle.y > 0, we want to increase Axle.y.
-                // We need a torque that rotates around Heading.
-                // If Axle.y > 0, tilt is same direction as Up.
-                const heading = new CANNON.Vec3();
-                axle.cross(up, heading);
-                heading.normalize();
-                
-                // Direction to tip:
-                // If we are tilting Left, push further Left.
-                // Determining sign is tricky, so let's just push towards the ground.
-                // Cross(Axle, Velocity) gives a vector pointing roughly Down or Up.
-                // Let's just dampen stability.
+                // Gradual damping increase
+                this.body.linearDamping = 0.05 + (this.flattenFactor * 0.3);
+                this.body.angularDamping = 0.05 + (this.flattenFactor * 0.4);
             } else {
-                this.flattenFactor = Math.max(0, this.flattenFactor - dt);
+                this.flattenFactor = Math.max(0, this.flattenFactor - dt * 2);
                 this.body.linearDamping = 0.0;
-                this.body.angularDamping = 0.01;
+                this.body.angularDamping = 0.05;
             }
 
-            // 3. Apply Steering
-            // If flattening, reduce control
-            const controlStr = this.isFlattening ? (1 - this.flattenFactor) : 1;
+            // --- Steering ---
+            const controlStr = this.isFlattening ? (1 - this.flattenFactor * 0.5) : 1;
             if (Math.abs(this.steeringInput) > 0.01 && controlStr > 0) {
-                 const sidewaysForce = 60 * controlStr;
-                 // Apply force relative to heading
-                 // Actually, World X is fine for side-to-side on this terrain
-                 this.body.applyForce(new CANNON.Vec3(this.steeringInput * sidewaysForce, 0, 0), this.body.position);
+                const sidewaysForce = 50 * controlStr;
+                this.body.applyForce(
+                    new CANNON.Vec3(this.steeringInput * sidewaysForce, 0, 0),
+                    this.body.position
+                );
             }
 
-            // 4. Air Resistance / Drag
+            // --- Light Air Resistance ---
             const vel = this.body.velocity;
             const speed = vel.length();
             if (speed > 1) {
-                const dragFactor = 0.002;
+                const dragFactor = 0.001; // Reduced drag
                 const dragMagnitude = speed * speed * dragFactor;
                 const dragForce = vel.clone().scale(-dragMagnitude / speed);
                 this.body.applyForce(dragForce, this.body.position);
             }
 
-            // 5. Hard Falling Friction ("Penny Falling" logic)
-            // If the donut tilts out of orientation, we want it to feel heavy and pulled down,
-            // not bouncy or floaty.
-            if (tilt > 0.35) {
-                // Aggressively kill upward velocity (No bouncing up)
-                if (this.body.velocity.y > 0.5) {
-                    this.body.velocity.y *= 0.1; 
-                }
-
-                // Apply extra downward force ("pulled down")
-                // proportional to how much we are tilted
-                const extraGravity = new CANNON.Vec3(0, -50 * this.body.mass * tilt, 0);
-                this.body.applyForce(extraGravity, this.body.position);
-
-                // High damping to simulate the energy loss of a rattling coin/flat tire
-                this.body.angularDamping = 0.5 + (tilt * 0.4); 
-                this.body.linearDamping = 0.1 + (tilt * 0.5);
+            // --- Gentle Stabilization (Only when rolling well) ---
+            if (speed > 15 && tilt < 0.3 && !this.isFlattening && !this.boostActive) {
+                // Gentle upright torque
+                const heading = new CANNON.Vec3();
+                axle.cross(up, heading);
+                heading.normalize();
                 
-                // If spinning rapidly while flat (top-spin glitch), kill rotation immediately
-                // preventing "helicopter" launches
-                if (this.body.angularVelocity.length() > 10) {
-                    this.body.angularDamping = 0.9;
-                }
-            } else {
-                // Normal rolling
-                this.body.angularDamping = 0.1;
-                this.body.linearDamping = 0.0;
+                const correction = -axle.y * 20; // Reduced correction force
+                this.body.torque.vadd(heading.scale(correction), this.body.torque);
             }
 
-            // --- Glitch Prevention & Stabilization ---
-            // Detect tumbling/propeller spin (rotation NOT matching the wheel axle)
-            // This catches "spinning out of control" when airborne or glitching
+            // --- Safety: Prevent wild tumbling ---
             const spin = this.body.angularVelocity;
             const spinAlongAxle = spin.dot(axle);
             const spinVecAlongAxle = axle.clone().scale(spinAlongAxle);
             const spinPerp = spin.vsub(spinVecAlongAxle);
             const offAxisSpin = spinPerp.length();
 
-            if (offAxisSpin > 10) { 
-                // We are tumbling wildly. Stabilize.
-                this.body.linearDamping = 0.9; 
-                this.body.angularDamping = 0.9; 
-                
-                // Apply counter-torque to stop the tumbling
-                this.body.torque.vadd(spinPerp.scale(-20), this.body.torque);
-
-                // Pull back down strongly if this happens in the air (prevents flying out of map)
-                this.body.applyForce(new CANNON.Vec3(0, -100 * this.body.mass, 0), this.body.position);
+            // Only intervene on extreme tumbling
+            if (offAxisSpin > 15) {
+                // Apply counter-torque
+                this.body.torque.vadd(spinPerp.scale(-10), this.body.torque);
+                // Don't apply heavy damping - let physics work
             }
 
-            // Absolute Safety: Cap vertical velocity
-            // If we are unstable, cap it very low. If stable, cap it high.
-            const maxRiseSpeed = (this.isUnstable || tilt > 0.3) ? 2 : 50;
-            if (this.body.velocity.y > maxRiseSpeed) {
-                 this.body.velocity.y = maxRiseSpeed; 
-            }
-            // Removed artificial downward force to respect true gravity physics
-            
-            // Auto-stabilization (Assist)
-            // If going fast and reasonably upright, apply torque to keep upright
-            if (speed > 15 && tilt < 0.3 && !this.isFlattening) {
-                // Torque to align Axle with Horizon
-                // Axis of rotation required is Heading
-                const heading = new CANNON.Vec3();
-                axle.cross(up, heading);
-                heading.normalize();
-                
-                // We want Axle.y to be 0.
-                // If Axle.y > 0, we need Negative Torque around Heading (Right Hand Rule?)
-                // Let's try proportional feedback
-                const correction = -axle.y * 50; 
-                this.body.torque.vadd(heading.scale(correction), this.body.torque);
-            }
-
-            // Speed Cap
-            if (speed > 80) {
-                vel.scale(80 / speed);
+            // --- Reasonable Speed Cap ---
+            if (speed > 100) {
+                vel.scale(100 / speed);
                 this.body.velocity.copy(vel);
             }
 
-            // Sync Visuals
+            // --- Sync Visuals ---
             if (!isNaN(this.body.position.x)) {
-                 this.meshGroup.position.copy(this.body.position);
-                 this.meshGroup.quaternion.copy(this.body.quaternion);
+                this.meshGroup.position.copy(this.body.position);
+                this.meshGroup.quaternion.copy(this.body.quaternion);
             }
             
-            // Visual feedback for Instability & Squish
-            // Add a subtle squish scale based on impact/gravity/instability
-            const baseY = 1.0;
+            // Visual squish feedback (subtle)
             let squish = 0;
-            
-            // Squish when hitting ground hard (based on Y velocity change approximation or just gravity force)
-            // Simple visual: if unstable, flatten visual mesh slightly to look "heavy"
-            if (tilt > 0.3) {
-                 squish = 0.2 * tilt;
+            if (this.isFlattening) {
+                squish = 0.15 * this.flattenFactor;
             }
 
-            const targetScaleY = baseY - squish;
-            const targetScaleXZ = 1.0 + (squish * 0.5); // Volume preservationish
+            const targetScaleY = 1.0 - squish;
+            const targetScaleXZ = 1.0 + (squish * 0.3);
+            this.meshGroup.scale.lerp(
+                new THREE.Vector3(targetScaleXZ, targetScaleY, targetScaleXZ),
+                0.1
+            );
 
-            this.meshGroup.scale.lerp(new THREE.Vector3(targetScaleXZ, targetScaleY, targetScaleXZ), 0.1);
-
-            if (this.isUnstable) {
-                this.meshGroup.children[0].material.color.setHex(0xffcccc); // Red tint
+            // Visual feedback
+            if (this.isUnstable && this.isFlattening) {
+                this.meshGroup.children[0].material.color.setHex(0xffcccc);
             } else {
                 this.meshGroup.children[0].material.color.setHex(0xffffff);
             }
 
-            // Hide limbs
+            // Hide limbs during roll
             if (this.limbsGroup.visible) {
                 const s = Math.max(0, this.limbsGroup.scale.x - dt * 5);
                 this.limbsGroup.scale.set(s, s, s);
