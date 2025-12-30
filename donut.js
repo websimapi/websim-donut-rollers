@@ -121,8 +121,9 @@ export class Donut {
     startRolling() {
         this.isRolling = true;
         
-        // Reset Visual Rotation so physics can take over, rotated 90° around Y
-        this.meshGroup.rotation.set(0, Math.PI / 2, 0);
+        // Reset Visual Rotation so physics can take over.
+        // Set to (0,0,0) so the wheel (YZ plane) aligns with world for rolling along Z.
+        this.meshGroup.rotation.set(0, 0, 0);
 
         // Ensure body is at the current visual position before adding
         // Check for validity
@@ -137,8 +138,8 @@ export class Donut {
         
         // Initial push - Stronger launch
         this.body.velocity.set(0, -5, -60);
-        // Spin it forward immediately
-        this.body.angularVelocity.set(20, 0, 0);
+        // Spin it forward immediately (Negative X for forward roll along -Z)
+        this.body.angularVelocity.set(-20, 0, 0);
 
         // Play sounds
         this.assets.playSound('jump');

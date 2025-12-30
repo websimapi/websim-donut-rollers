@@ -29,11 +29,6 @@ export class InfiniteTerrain {
         // Increased slope for speed and momentum
         let y = z * 0.5; 
 
-        // Flatten the start area slightly to ensure a safe landing pad
-        if (z > -10 && z < 10) {
-            y = (z * 0.5) * 0.5; 
-        }
-
         // Add a "bowl" shape so the player stays in the middle naturally
         y += Math.pow(Math.abs(x) / 15, 2.5);
 
