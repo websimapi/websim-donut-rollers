@@ -151,6 +151,13 @@ export class Donut {
         this.assets.playLoop('roll');
     }
 
+    boostForward() {
+        if (!this.isRolling) return;
+        const impulse = new CANNON.Vec3(0, 0, 40); // forward along +Z
+        this.body.applyImpulse(impulse, this.body.position);
+        this.assets.playSound('jump');
+    }
+
     update(time, dt) {
         if (!this.isRolling) {
             // Idle Animation

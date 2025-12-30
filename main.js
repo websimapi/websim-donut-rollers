@@ -48,6 +48,11 @@ let gameState = 'IDLE'; // IDLE, STARTING, PLAYING, GAME_OVER
 let input = { x: 0 }; // -1 to 1
 let stoppedTime = 0; // how long we've been basically stopped
 
+// Swipe / drag state
+let lastTouchY = null;
+let lastMouseY = null;
+let mouseDown = false;
+
 // --- Audio System ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const assets = {
@@ -105,13 +110,40 @@ window.addEventListener('touchmove', (e) => {
     if (e.target.id === 'game-container' || e.target.tagName === 'BODY') {
         e.preventDefault();
     }
-    const touchX = e.touches[0].clientX;
+    const touch = e.touches[0];
+    const touchX = touch.clientX;
+    const touchY = touch.clientY;
+
+    // Horizontal steer
     handleInput((touchX / window.innerWidth) * 2 - 1);
+
+    // Vertical swipe for forward boost (swipe up)
+    if (gameState === 'PLAYING') {
+        if (lastTouchY === null) lastTouchY = touchY;
+        const dy = touchY - lastTouchY;
+        const swipeThreshold = -40; // pixels; negative = upward swipe
+        if (dy < swipeThreshold) {
+            donut.boostForward();
+            lastTouchY = touchY; // reset so repeated swipes can trigger
+        }
+    }
 }, { passive: false });
 
 window.addEventListener('mousemove', (e) => {
     if (gameState === 'PLAYING') {
+        // Horizontal steer
         handleInput((e.clientX / window.innerWidth) * 2 - 1);
+
+        // Mouse drag up for boost
+        if (mouseDown) {
+            if (lastMouseY === null) lastMouseY = e.clientY;
+            const dy = e.clientY - lastMouseY;
+            const dragThreshold = -20; // smaller threshold for mouse
+            if (dy < dragThreshold) {
+                donut.boostForward();
+                lastMouseY = e.clientY;
+            }
+        }
     }
 });
 
@@ -141,12 +173,30 @@ function startGame() {
 }
 
 window.addEventListener('click', startGame);
+
+window.addEventListener('mousedown', (e) => {
+    mouseDown = true;
+    lastMouseY = e.clientY;
+});
+
+window.addEventListener('mouseup', () => {
+    mouseDown = false;
+    lastMouseY = null;
+});
+
 window.addEventListener('touchstart', (e) => {
     // Prevent default touch behaviors on canvas
-    if(e.target.tagName !== 'BUTTON') {
-       startGame();
+    if (e.target.tagName !== 'BUTTON') {
+        startGame();
+    }
+    if (e.touches[0]) {
+        lastTouchY = e.touches[0].clientY;
     }
 }, { passive: false });
+
+window.addEventListener('touchend', () => {
+    lastTouchY = null;
+});
 
 // --- Resize ---
 window.addEventListener('resize', () => {
