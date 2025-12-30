@@ -21,6 +21,8 @@ export class InfiniteTerrain {
         this.createChunk(0);                   // Z center 0 (Start)
         this.createChunk(-this.chunkLength);   // Z center -200 (Ahead)
         this.createChunk(-this.chunkLength*2); // Z center -400 (Far Ahead)
+        
+        this.addSafetyFloor();
     }
 
     // Mathematical definition of the mountain shape
@@ -169,6 +171,19 @@ export class InfiniteTerrain {
         this.world.addBody(body);
 
         this.chunks.push({ mesh, body, z: zCenter });
+    }
+
+    // Safety floor to prevent falling through the world
+    addSafetyFloor() {
+        const shape = new CANNON.Plane();
+        const body = new CANNON.Body({
+            mass: 0, 
+            material: this.mat
+        });
+        body.addShape(shape);
+        body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+        body.position.set(0, -50, 0); // Catch player if they fall
+        this.world.addBody(body);
     }
 
     update(playerZ) {

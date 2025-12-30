@@ -85,7 +85,8 @@ loadAudio('./music_loop.mp3', 'music');
 const terrain = new InfiniteTerrain(scene, world);
 
 // Calculate start height based on terrain at 0,0
-const startY = terrain.getHeightAt(0, 0) + 3; // +3 units above ground
+// Add extra height to ensure we don't spawn inside the mesh collision
+const startY = terrain.getHeightAt(0, 0) + 5; 
 const donut = new Donut(scene, world, new THREE.Vector3(0, startY, 0), assets);
 
 // --- Input Handling ---

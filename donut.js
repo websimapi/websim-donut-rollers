@@ -20,9 +20,9 @@ export class Donut {
         
         // Material setup
         const texture = new THREE.TextureLoader().load('./donut_texture.png');
+        texture.center.set(0.5, 0.5);
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
-        // Rotate texture to align frosting on top (approximate adjustment)
         texture.rotation = Math.PI / 2; 
         
         const material = new THREE.MeshStandardMaterial({ 
@@ -32,6 +32,8 @@ export class Donut {
         });
 
         this.torus = new THREE.Mesh(geometry, material);
+        // Rotate torus so the hole aligns with X axis (Axle), allowing it to roll like a wheel along Z
+        this.torus.rotation.y = Math.PI / 2;
         this.torus.castShadow = true;
         this.meshGroup.add(this.torus);
 
@@ -40,28 +42,28 @@ export class Donut {
         const eyeGeo = new THREE.SphereGeometry(0.12, 16, 16);
         const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
         
-        // Position eyes on the ring dough, not in the hole
+        // Position eyes on the side of the donut (hubcap area)
         const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-        leftEye.position.set(-0.35, 0.8, 0.05);
+        leftEye.position.set(0.05, 0.3, 0.5);
         const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-        rightEye.position.set(0.35, 0.8, 0.05);
+        rightEye.position.set(0.05, 0.3, -0.5);
         
         // Shine in eyes
         const shineGeo = new THREE.SphereGeometry(0.04, 8, 8);
         const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
         const leftShine = new THREE.Mesh(shineGeo, shineMat);
-        leftShine.position.set(-0.04, 0.04, 0.1);
+        leftShine.position.set(0.1, 0.04, 0.04);
         const rightShine = new THREE.Mesh(shineGeo, shineMat);
-        rightShine.position.set(-0.04, 0.04, 0.1);
+        rightShine.position.set(0.1, 0.04, 0.04);
         
         leftEye.add(leftShine);
         rightEye.add(rightShine);
         
         this.eyesGroup.add(leftEye);
         this.eyesGroup.add(rightEye);
-        // Position eyes on the front surface of the torus
-        this.eyesGroup.position.z = 0.42; // Touch the surface (radius 0.45 + offset)
-        this.eyesGroup.position.y = 0;
+        
+        // Position eyes group on the side of the mesh
+        this.eyesGroup.position.set(0.45, 0, 0);
         this.meshGroup.add(this.eyesGroup);
 
         // 3. Limbs (Arms and Legs)
