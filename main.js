@@ -295,7 +295,7 @@ function animate() {
         }
 
         // Game over immediately if we fall significantly below the surface
-        if (pos.y < terrainY - 5) {
+        if (pos.y < terrainY - 20) {
             gameState = 'GAME_OVER';
         }
     } else if (gameState === 'IDLE') {

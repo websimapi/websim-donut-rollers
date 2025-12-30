@@ -13,6 +13,8 @@ export class Donut {
         this.isUnstable = false;
         this.isFlattening = false;
         this.flattenFactor = 0; // 0 to 1
+        this.lastBoostTime = 0;
+        this.boostCooldown = 6000; // 6 seconds ms
         
         // --- Visuals ---
         this.meshGroup = new THREE.Group();
@@ -163,6 +165,13 @@ export class Donut {
         
         if (!this.isRolling) return;
 
+        // Cooldown check
+        const now = performance.now();
+        if (now - this.lastBoostTime < this.boostCooldown) {
+            return;
+        }
+        this.lastBoostTime = now;
+
         const inputDir = new CANNON.Vec3(vx, 0, -vy);
         const strength = inputDir.length();
         if (strength < 0.1) return;
@@ -186,7 +195,7 @@ export class Donut {
         const tQ = new THREE.Quaternion();
         tQ.setFromRotationMatrix(tM);
 
-        // Snap orientation to new direction (Arcade snappy feel)
+        // Snap orientation to new direction (Auto-correct)
         this.body.quaternion.set(tQ.x, tQ.y, tQ.z, tQ.w);
         this.body.angularVelocity.set(0,0,0); // Reset spin to prevent gyroscope fighting
 
@@ -196,7 +205,8 @@ export class Donut {
         const newSpeed = Math.max(currentSpeed, 20) + boostSpeed;
         
         const newVel = inputDir.scale(newSpeed);
-        newVel.y = Math.max(this.body.velocity.y, 0); // Preserve or reset vertical momentum
+        // Important: Preserve existing vertical velocity so gravity isn't cancelled
+        newVel.y = this.body.velocity.y; 
         this.body.velocity.copy(newVel);
 
         // 3. Apply Spin compatible with new velocity
@@ -327,14 +337,12 @@ export class Donut {
                 this.body.applyForce(new CANNON.Vec3(0, -100 * this.body.mass, 0), this.body.position);
             }
 
-            // Absolute Safety: Cap vertical velocity to prevent launching into space
-            if (this.body.velocity.y > 30) {
-                 this.body.velocity.y = 30; 
+            // Absolute Safety: Cap vertical velocity only slightly to prevent infinite energy bugs
+            // But assume Gravity is the main downward force.
+            if (this.body.velocity.y > 50) {
+                 this.body.velocity.y = 50; 
             }
-            // If we are unexpectedly high and rising, push down
-            if (this.body.velocity.y > 10 && this.body.position.y > 20) {
-                 this.body.applyForce(new CANNON.Vec3(0, -50 * this.body.mass, 0), this.body.position);
-            }
+            // Removed artificial downward force to respect true gravity physics
             
             // Auto-stabilization (Assist)
             // If going fast and reasonably upright, apply torque to keep upright
