@@ -265,8 +265,8 @@ function animate() {
         
         // Safety check to prevent camera NaN bugs causing black/blue screen
         if (targetPos && !isNaN(targetPos.x) && !isNaN(targetPos.y) && !isNaN(targetPos.z)) {
-            // Offset camera relative to slope (Behind is -Z, since we move +Z)
-            const offset = new THREE.Vector3(0, 12, -18); 
+            // Offset camera higher and slightly closer for a more top-down third-person view
+            const offset = new THREE.Vector3(0, 18, -16); 
             
             // Smooth follow
             const idealPos = new THREE.Vector3().copy(targetPos).add(offset);
