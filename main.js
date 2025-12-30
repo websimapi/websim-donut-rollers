@@ -8,9 +8,10 @@ const container = document.getElementById('game-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB);
 // Increased fog distance for "expansive" feel
-scene.fog = new THREE.Fog(0x87CEEB, 30, 250);
+// Using a slightly different fog color to debug vs background if needed, but keeping it pretty
+scene.fog = new THREE.Fog(0x87CEEB, 20, 300);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -86,7 +87,8 @@ const terrain = new InfiniteTerrain(scene, world);
 
 // Calculate start height based on terrain at 0,0
 // Start much higher to prevent initial clipping
-const startY = terrain.getHeightAt(0, 0) + 8; 
+// Ensure initial height is safe and definitely above terrain
+const startY = terrain.getHeightAt(0, 0) + 5; 
 const donut = new Donut(scene, world, new THREE.Vector3(0, startY, 0), assets);
 
 // --- Input Handling ---
@@ -95,7 +97,10 @@ function handleInput(x) {
 }
 
 window.addEventListener('touchmove', (e) => {
-    e.preventDefault();
+    // Only prevent default if it's the game interaction
+    if (e.target.id === 'game-container' || e.target.tagName === 'BODY') {
+        e.preventDefault();
+    }
     const touchX = e.touches[0].clientX;
     handleInput((touchX / window.innerWidth) * 2 - 1);
 }, { passive: false });
@@ -185,8 +190,8 @@ function animate() {
             // Reset? For now just log
         }
     } else {
-        // Idle Physics?
-        // No, in IDLE mode donut is kinematic/static visually
+        // Stick physics body to visual start position so it doesn't drift in void
+        donut.resetPhysicsPosition();
     }
 
     // Object Updates
@@ -194,24 +199,32 @@ function animate() {
 
     // Camera Logic
     if (gameState === 'IDLE') {
-        const radius = 8;
-        camera.position.x = Math.sin(time * 0.5) * radius;
-        camera.position.z = Math.cos(time * 0.5) * radius;
-        camera.position.y = donut.meshGroup.position.y + 3;
+        const radius = 10;
+        camera.position.x = Math.sin(time * 0.3) * radius;
+        camera.position.z = Math.cos(time * 0.3) * radius;
+        camera.position.y = donut.meshGroup.position.y + 5;
         camera.lookAt(donut.meshGroup.position);
     } else if (gameState === 'PLAYING') {
         const targetPos = donut.getPosition();
         
         // Safety check to prevent camera NaN bugs causing black/blue screen
         if (targetPos && !isNaN(targetPos.x) && !isNaN(targetPos.y) && !isNaN(targetPos.z)) {
+            // Check for falling off world
+            if (targetPos.y < -500) {
+                // Respawn logic or just cap camera?
+                // For now, let's keep camera looking at something sane
+            }
+
             // Offset camera relative to slope
             // Looking down from behind
-            const offset = new THREE.Vector3(0, 8, 12); 
+            // As we speed up, pull back?
+            const offset = new THREE.Vector3(0, 10, 15); 
             
             // Smooth follow
             const idealPos = new THREE.Vector3().copy(targetPos).add(offset);
             
-            camera.position.lerp(idealPos, 0.1);
+            // Use stiffer lerp to prevent losing the player at high speeds
+            camera.position.lerp(idealPos, 0.2);
             camera.lookAt(targetPos);
             
             // Update Light

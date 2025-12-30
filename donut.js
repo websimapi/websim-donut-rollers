@@ -185,6 +185,15 @@ export class Donut {
     getPosition() {
         return this.body.position;
     }
+
+    resetPhysicsPosition() {
+        // Sync body to mesh when not playing
+        if (!isNaN(this.meshGroup.position.y)) {
+            this.body.position.copy(this.meshGroup.position);
+            this.body.velocity.set(0,0,0);
+            this.body.angularVelocity.set(0,0,0);
+        }
+    }
     
     applyForce(vec) {
         this.body.applyForce(vec, this.body.position);

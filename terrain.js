@@ -26,6 +26,7 @@ export class InfiniteTerrain {
     // Mathematical definition of the mountain shape
     getHeightAt(x, z) {
         // Base Slope: Downhill as Z decreases
+        // We want Z decreasing to go DOWN.
         let y = z * 0.4;
 
         // Flatten the start area slightly to ensure a safe landing pad
@@ -49,52 +50,47 @@ export class InfiniteTerrain {
 
     createChunk(zCenter) {
         // zCenter is the center of this chunk along Z axis
-        // The plane geometry is created at (0,0,0) then moved.
         
         const segmentsW = 30;
         const segmentsH = 30;
         const geometry = new THREE.PlaneGeometry(this.chunkWidth, this.chunkLength, segmentsW, segmentsH);
         
         const posAttribute = geometry.attributes.position;
+        // Vertices for physics (local to the body/mesh)
         const vertices = [];
         const indices = [];
 
         // Deform Plane
-        // PlaneGeometry default: X is width, Y is height (mapped to World -Z)
-        // We iterate vertices, transform to world coord, sample height, apply to Z (World Y)
+        // We want to modify the Local Z of the plane (which becomes World Y after rotation).
+        // Mapping: 
+        // Mesh Rotation X = -90 degrees (-PI/2)
+        // Mesh Position = (0, 0, zCenter)
+        //
+        // Local (lx, ly, lz) -> World
+        // RotX(-90) * (lx, ly, lz) = (lx, lz, -ly) (approx, verifying below)
+        // With +Y (up in plane) mapping to -Z (forward in world)
+        // Local Y+ is "Top" of plane. Rotated -90X, it points to -Z (Away/Forward).
+        //
+        // So:
+        // WorldX = lx
+        // WorldZ = zCenter - ly  (If ly is positive (top), it maps to zCenter - ly (lower z))
         
         for (let i = 0; i < posAttribute.count; i++) {
             const lx = posAttribute.getX(i);
-            const ly = posAttribute.getY(i); // Local Y, ranges from +Length/2 to -Length/2
+            const ly = posAttribute.getY(i); 
             
-            // Map to World Coordinates
-            // We rotate X by -90 later. 
-            // So Mesh Local Y+ -> World Z-
-            // But wait, to ensure seamless math, let's calculate the target World X, Z for this vertex
-            // Mesh is positioned at (0, 0, zCenter)
-            // Mesh rotation -90 X means:
-            // Local (x, y, z) -> World (x, z, -y) roughly (ignoring sign details for a moment)
-            // Let's stick to explicit mapping:
-            // The mesh will be at position (0, 0, zCenter).
-            // It is rotated -PI/2 on X.
-            // A vertex (lx, ly, 0) in local becomes:
-            // World X = lx
-            // World Y = 0 (before height mod)
-            // World Z = zCenter - ly  (Assuming plane top Y is "back" and bottom Y is "forward")
-            // Let's verify: Plane Y goes from +H/2 (top) to -H/2 (bottom).
-            // If we rotate top away, +H/2 maps to -Z relative to center.
-            // So WorldZ = zCenter - ly.
-            
+            // Calculate corresponding World X/Z to sample noise
             const worldX = lx;
             const worldZ = zCenter - ly; 
             
+            // Get Height
             const height = this.getHeightAt(worldX, worldZ);
             
-            // Set local Z (which becomes World Y)
+            // Set Local Z to height
             posAttribute.setZ(i, height);
             
-            // Store for physics (World Coords)
-            vertices.push(worldX, height, worldZ);
+            // Store Local Vertex for Physics Trimesh
+            vertices.push(lx, ly, height);
         }
 
         geometry.computeVertexNormals();
@@ -138,8 +134,8 @@ export class InfiniteTerrain {
         });
 
         const mesh = new THREE.Mesh(geometry, material);
+        // Align Mesh
         mesh.rotation.x = -Math.PI / 2;
-        // Position Y is 0 because height is baked into vertices relative to 0
         mesh.position.set(0, 0, zCenter);
         
         mesh.castShadow = true;
@@ -147,22 +143,20 @@ export class InfiniteTerrain {
         this.scene.add(mesh);
 
         // Physics Body
-        // Trimesh needs indices
+        // Trimesh indices
         for (let i = 0; i < geometry.index.count; i++) {
             indices.push(geometry.index.array[i]);
         }
 
-        // Cannon Trimesh expects vertices as flat array [x,y,z, x,y,z...]
-        // Our 'vertices' array is exactly that
+        // Create Trimesh from LOCAL vertices
         const shape = new CANNON.Trimesh(vertices, indices);
         const body = new CANNON.Body({ mass: 0, material: this.mat });
         body.addShape(shape);
-        // Trimesh is created in World Space coords because we baked them?
-        // No, Trimesh vertices are local to the Body.
-        // We calculated 'vertices' as World Coords (worldX, height, worldZ).
-        // If we put the Body at (0,0,0) and Identity rotation, it aligns.
         
-        body.position.set(0, 0, 0); 
+        // Align Body EXACTLY like Mesh
+        body.position.copy(mesh.position);
+        body.quaternion.copy(mesh.quaternion);
+        
         this.world.addBody(body);
 
         this.chunks.push({ mesh, body, z: zCenter });
