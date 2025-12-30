@@ -12,7 +12,8 @@ export class InfiniteTerrain {
         
         // Physics material
         this.mat = new CANNON.Material();
-        this.mat.friction = 0.3;
+        this.mat.friction = 0.6;
+        this.mat.restitution = 0.1;
 
         // Initialize with chunks behind and ahead
         // Player starts at Z=0.

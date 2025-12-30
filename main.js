@@ -171,7 +171,7 @@ function animate() {
     if (gameState === 'PLAYING') {
         // Input Physics
         // Move sideways (steering already inverted in handleInput)
-        const sidewaysForce = 25;
+        const sidewaysForce = 40; // Increased for heavier cylinder
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
         // Let gravity and terrain slope do ALL the forward work.
@@ -182,7 +182,7 @@ function animate() {
 
         // Soften any uphill drift instead of hard-clamping
         if (vel.z < 0) {
-            vel.z *= 0.5;
+            vel.z *= 0.8; // Allow slight rollback for realism but dampen it
         }
 
         // Update Score (distance travelled downhill)
