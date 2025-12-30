@@ -108,9 +108,9 @@ export class Donut {
             position: new CANNON.Vec3(position.x, position.y, position.z),
             material: new CANNON.Material({ friction: 0.15, restitution: 0.4 })
         });
-        // Slightly higher damping so motion feels physical but not jittery
-        this.body.linearDamping = 0.15;
-        this.body.angularDamping = 0.15;
+        // Higher damping so motion slows and settles like a real coin
+        this.body.linearDamping = 0.25;
+        this.body.angularDamping = 0.3;
 
         // Enable CCD to prevent tunneling
         this.body.ccdSpeedThreshold = 1;

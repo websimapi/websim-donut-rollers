@@ -42,8 +42,9 @@ world.gravity.set(0, -9.82 * 1.5, 0); // Slightly stronger gravity for snappy bu
 world.solver.iterations = 20; // Reduce tunneling through terrain
 
 // --- Game State ---
-let gameState = 'IDLE'; // IDLE, STARTING, PLAYING
+let gameState = 'IDLE'; // IDLE, STARTING, PLAYING, GAME_OVER
 let input = { x: 0 }; // -1 to 1
+let stoppedTime = 0; // how long we've been basically stopped
 
 // --- Audio System ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -162,18 +163,21 @@ function animate() {
     const dt = Math.min(clock.getDelta(), 0.1); 
     const time = clock.getElapsedTime();
 
-    if (gameState === 'PLAYING') {
-        // Physics
+    // Step physics whenever the donut is active in the world
+    if (gameState === 'PLAYING' || gameState === 'GAME_OVER') {
         world.step(1 / 60, dt, 5);
-        
+    }
+
+    if (gameState === 'PLAYING') {
         // Input Physics
         // Move sideways (steering already inverted in handleInput)
         const sidewaysForce = 25;
         donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
-        // Let gravity and terrain slope do most of the work.
-        // Apply only a gentle forward nudge if we are nearly stopped
-        // to keep the run flowing without glitchy acceleration.
+        // Let gravity and terrain slope do ALL the forward work.
+        // We don't apply extra downhill pushes so the donut can
+        // slow down and fall naturally like a coin.
+
         const vel = donut.body.velocity;
 
         // Soften any uphill drift instead of hard-clamping
@@ -181,26 +185,37 @@ function animate() {
             vel.z *= 0.5;
         }
 
-        // If we're moving very slowly, add a small downhill push
-        const minRollSpeed = 5;
-        if (vel.z < minRollSpeed) {
-            donut.applyForce(new CANNON.Vec3(0, 0, 40));
-        }
-
-        // Update Score
+        // Update Score (distance travelled downhill)
         const zPos = donut.meshGroup.position.z;
-        score = Math.floor(Math.abs(zPos));
+        score = Math.floor(Math.max(0, zPos));
         document.getElementById('score-val').innerText = score;
 
         // Update Terrain
         terrain.update(zPos);
         
-        // Fail state (fall off world)
-        if (donut.getPosition().y < zPos * 0.4 - 50) {
-            // Player fell way below terrain line
-            // Reset? For now just log
+        // --- Game Over Logic ---
+        const pos = donut.getPosition();
+        const terrainY = terrain.getHeightAt(pos.x, pos.z);
+        const dy = pos.y - terrainY;
+        const speedSq = vel.x * vel.x + vel.y * vel.y + vel.z * vel.z;
+
+        // If we are close to the ground and very slow, start counting "stopped" time
+        if (dy < 2 && speedSq < 1 * 1) {
+            stoppedTime += dt;
+        } else {
+            stoppedTime = 0;
         }
-    } else {
+
+        // Game over if we've been stopped for a bit
+        if (stoppedTime > 2) {
+            gameState = 'GAME_OVER';
+        }
+
+        // Game over immediately if we fall significantly below the surface
+        if (pos.y < terrainY - 5) {
+            gameState = 'GAME_OVER';
+        }
+    } else if (gameState === 'IDLE') {
         // Stick physics body to visual start position so it doesn't drift in void
         donut.resetPhysicsPosition();
     }
@@ -217,7 +232,7 @@ function animate() {
              camera.position.y = donut.meshGroup.position.y + 5;
              camera.lookAt(donut.meshGroup.position);
         }
-    } else if (gameState === 'PLAYING') {
+    } else if (gameState === 'PLAYING' || gameState === 'GAME_OVER') {
         const targetPos = donut.meshGroup.position;
         
         // Safety check to prevent camera NaN bugs causing black/blue screen
