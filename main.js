@@ -7,12 +7,14 @@ import { InfiniteTerrain } from './terrain.js';
 const container = document.getElementById('game-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB);
-scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+// Increased fog distance for "expansive" feel
+scene.fog = new THREE.Fog(0x87CEEB, 30, 250);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 
 // Lights
@@ -20,17 +22,23 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(10, 20, 10);
+dirLight.position.set(50, 100, 50);
 dirLight.castShadow = true;
-dirLight.shadow.camera.left = -20;
-dirLight.shadow.camera.right = 20;
-dirLight.shadow.camera.top = 20;
-dirLight.shadow.camera.bottom = -20;
+// Increase shadow frustum to cover terrain
+dirLight.shadow.camera.left = -50;
+dirLight.shadow.camera.right = 50;
+dirLight.shadow.camera.top = 50;
+dirLight.shadow.camera.bottom = -50;
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 300;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
 scene.add(dirLight);
 
 // Physics World
 const world = new CANNON.World();
-world.gravity.set(0, -9.82, 0);
+world.gravity.set(0, -9.82 * 2, 0); // Heavier gravity for snappier feeling
+world.solver.iterations = 20; // Reduce tunneling through terrain
 
 // --- Game State ---
 let gameState = 'IDLE'; // IDLE, STARTING, PLAYING
@@ -54,7 +62,7 @@ const assets = {
         source.connect(audioCtx.destination);
         source.loop = true;
         source.start(0);
-        return source; // return so we can stop it if needed
+        return source; 
     }
 };
 
@@ -69,19 +77,19 @@ async function loadAudio(url, id) {
     }
 }
 
-// Load Sounds
 loadAudio('./jump.mp3', 'jump');
 loadAudio('./rolling_loop.mp3', 'roll');
 loadAudio('./music_loop.mp3', 'music');
 
 // --- Game Objects ---
-// Start at Y = -0.4 so the feet (roughly 1.6 units below center) touch the terrain at Y = -2
-const donut = new Donut(scene, world, new THREE.Vector3(0, -0.4, 0), assets);
 const terrain = new InfiniteTerrain(scene, world);
+
+// Calculate start height based on terrain at 0,0
+const startY = terrain.getHeightAt(0, 0) + 3; // +3 units above ground
+const donut = new Donut(scene, world, new THREE.Vector3(0, startY, 0), assets);
 
 // --- Input Handling ---
 function handleInput(x) {
-    // x is normalized -1 to 1 from screen center
     input.x = x;
 }
 
@@ -89,7 +97,7 @@ window.addEventListener('touchmove', (e) => {
     e.preventDefault();
     const touchX = e.touches[0].clientX;
     handleInput((touchX / window.innerWidth) * 2 - 1);
-});
+}, { passive: false });
 
 window.addEventListener('mousemove', (e) => {
     if (gameState === 'PLAYING') {
@@ -100,15 +108,15 @@ window.addEventListener('mousemove', (e) => {
 function startGame() {
     if (gameState !== 'IDLE') return;
     
-    // Resume audio context if suspended
     if (audioCtx.state === 'suspended') audioCtx.resume();
     
     gameState = 'STARTING';
     
     // UI Updates
-    document.getElementById('tap-to-start').style.opacity = '0';
+    const startText = document.getElementById('tap-to-start');
+    startText.style.opacity = '0';
     setTimeout(() => {
-        document.getElementById('tap-to-start').style.display = 'none';
+        startText.style.display = 'none';
         document.getElementById('score-display').classList.remove('hidden');
         document.getElementById('controls-hint').classList.remove('hidden');
     }, 500);
@@ -122,7 +130,12 @@ function startGame() {
 }
 
 window.addEventListener('click', startGame);
-window.addEventListener('touchstart', startGame);
+window.addEventListener('touchstart', (e) => {
+    // Prevent default touch behaviors on canvas
+    if(e.target.tagName !== 'BUTTON') {
+       startGame();
+    }
+}, { passive: false });
 
 // --- Resize ---
 window.addEventListener('resize', () => {
@@ -138,27 +151,41 @@ let score = 0;
 function animate() {
     requestAnimationFrame(animate);
 
-    const dt = Math.min(clock.getDelta(), 0.1); // Cap dt
+    const dt = Math.min(clock.getDelta(), 0.1); 
     const time = clock.getElapsedTime();
 
-    // Physics Update
     if (gameState === 'PLAYING') {
-        world.step(1 / 60, dt, 3);
+        // Physics
+        world.step(1 / 60, dt, 5);
         
         // Input Physics
-        // Apply sideways force based on input
-        const speed = 20;
-        donut.applyForce(new CANNON.Vec3(input.x * speed, 0, 0));
+        // Move sideways
+        const sidewaysForce = 30;
+        donut.applyForce(new CANNON.Vec3(input.x * sidewaysForce, 0, 0));
         
-        // Keep pushing forward (down Z)
-        donut.applyForce(new CANNON.Vec3(0, 0, -10));
+        // Always push forward (downhill is negative Z)
+        // If speed is low, boost it
+        const vel = donut.body.velocity;
+        if (vel.z > -40) { // Max speed cap / acceleration limit
+             donut.applyForce(new CANNON.Vec3(0, 0, -15));
+        }
 
         // Update Score
-        score = Math.floor(Math.abs(donut.getPosition().z));
+        const zPos = donut.getPosition().z;
+        score = Math.floor(Math.abs(zPos));
         document.getElementById('score-val').innerText = score;
 
         // Update Terrain
-        terrain.update(donut.getPosition().z);
+        terrain.update(zPos);
+        
+        // Fail state (fall off world)
+        if (donut.getPosition().y < zPos * 0.4 - 50) {
+            // Player fell way below terrain line
+            // Reset? For now just log
+        }
+    } else {
+        // Idle Physics?
+        // No, in IDLE mode donut is kinematic/static visually
     }
 
     // Object Updates
@@ -166,25 +193,28 @@ function animate() {
 
     // Camera Logic
     if (gameState === 'IDLE') {
-        // Orbit around donut
-        const radius = 6;
-        const speed = 0.5;
-        camera.position.x = Math.sin(time * speed) * radius;
-        camera.position.z = Math.cos(time * speed) * radius;
-        camera.position.y = 4;
-        camera.lookAt(new THREE.Vector3(0, 1, 0));
+        const radius = 8;
+        camera.position.x = Math.sin(time * 0.5) * radius;
+        camera.position.z = Math.cos(time * 0.5) * radius;
+        camera.position.y = donut.meshGroup.position.y + 3;
+        camera.lookAt(donut.meshGroup.position);
     } else if (gameState === 'PLAYING') {
-        // Follow Donut
         const targetPos = donut.getPosition();
-        const offset = new THREE.Vector3(0, 5, 8); // Behind and up
         
-        // Smooth lerp camera
+        // Offset camera relative to slope
+        // Looking down from behind
+        const offset = new THREE.Vector3(0, 8, 12); 
+        
+        // Smooth follow
         const idealPos = new THREE.Vector3().copy(targetPos).add(offset);
+        // Clamp camera Y to not go underground if donut is in a dip
+        // idealPos.y = Math.max(idealPos.y, targetPos.y + 2);
+
         camera.position.lerp(idealPos, 0.1);
         camera.lookAt(targetPos);
         
-        // Follow light
-        dirLight.position.z = targetPos.z + 10;
+        // Update Light
+        dirLight.position.set(targetPos.x + 20, targetPos.y + 30, targetPos.z + 20);
         dirLight.target.position.copy(targetPos);
         dirLight.target.updateMatrixWorld();
     }

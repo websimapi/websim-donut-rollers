@@ -77,7 +77,7 @@ export class Donut {
         
         // Arms
         this.armL = new THREE.Mesh(limbGeo, limbMat);
-        this.armL.position.set(-1.2, 0, 0);
+        this.armL.position.set(-1.2, 0.2, 0);
         this.armL.rotation.z = Math.PI / 4;
         
         this.armR = new THREE.Mesh(limbGeo, limbMat);
@@ -109,11 +109,15 @@ export class Donut {
 
     startRolling() {
         this.isRolling = true;
+        
+        // Ensure body is at the current visual position before adding
+        this.body.position.copy(this.meshGroup.position);
+        
         this.world.addBody(this.body);
         
         // Initial push
-        this.body.velocity.set(0, 5, -10);
-        this.body.angularVelocity.set(5, 0, 0);
+        this.body.velocity.set(0, 5, -15);
+        this.body.angularVelocity.set(10, 0, 0);
 
         // Play sounds
         this.assets.playSound('jump');

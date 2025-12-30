@@ -7,141 +7,187 @@ export class InfiniteTerrain {
         this.scene = scene;
         this.world = world;
         this.chunks = [];
-        this.chunkSize = 100;
-        this.chunkWidth = 100;
-        this.lastChunkZ = 0;
+        this.chunkLength = 200; // Longer chunks
+        this.chunkWidth = 150;  // Wider terrain
         
         // Physics material
         this.mat = new CANNON.Material();
         this.mat.friction = 0.3;
 
-        // Initial platform
-        this.createChunk(this.chunkSize, true);
-        this.createChunk(0, true);
-        this.createChunk(-this.chunkSize, false);
+        // Initialize with chunks behind and ahead
+        // Player starts at Z=0.
+        // We want chunks covering Z=100 down to Z=-500 initially
+        this.createChunk(this.chunkLength);    // Z center +200 (Backdrop)
+        this.createChunk(0);                   // Z center 0 (Start)
+        this.createChunk(-this.chunkLength);   // Z center -200 (Ahead)
+        this.createChunk(-this.chunkLength*2); // Z center -400 (Far Ahead)
     }
 
-    createChunk(zPosition, isStartPlatform) {
-        // Visual Mesh
-        const geometry = new THREE.PlaneGeometry(this.chunkWidth, this.chunkSize, 20, 20);
+    // Mathematical definition of the mountain shape
+    getHeightAt(x, z) {
+        // Base Slope: Downhill as Z decreases
+        // We want a steep mountain feel
+        // y = z * 0.4 (at z=-100, y=-40)
+        let y = z * 0.4;
+
+        // Add a "bowl" shape so the player stays in the middle naturally
+        // x^2 factor
+        y += Math.pow(Math.abs(x) / 15, 2.5);
+
+        // Add noise/hills
+        // Low frequency rolling hills
+        y += Math.sin(z * 0.05) * 2;
+        y += Math.cos(x * 0.1) * 1;
         
-        // Modify height for slopes
+        // High frequency roughness
+        y += Math.sin(z * 0.2) * 0.5;
+        
+        // Start Platform Flattening (around Z=0 to Z=20)
+        // Smoothly blend to flat at start so player doesn't slide immediately?
+        // Actually user wants to roll immediately. 
+        // But let's ensure the very start (0,0) isn't inside a spike.
+        
+        return y;
+    }
+
+    createChunk(zCenter) {
+        // zCenter is the center of this chunk along Z axis
+        // The plane geometry is created at (0,0,0) then moved.
+        
+        const segmentsW = 30;
+        const segmentsH = 30;
+        const geometry = new THREE.PlaneGeometry(this.chunkWidth, this.chunkLength, segmentsW, segmentsH);
+        
         const posAttribute = geometry.attributes.position;
-        const cannonShapeData = [];
+        const vertices = [];
+        const indices = [];
+
+        // Deform Plane
+        // PlaneGeometry default: X is width, Y is height (mapped to World -Z)
+        // We iterate vertices, transform to world coord, sample height, apply to Z (World Y)
         
         for (let i = 0; i < posAttribute.count; i++) {
-            const x = posAttribute.getX(i);
-            const y = posAttribute.getY(i);
-            // Z in PlaneGeometry is actually Y in world space before rotation
-            // We will rotate -90 deg X later.
+            const lx = posAttribute.getX(i);
+            const ly = posAttribute.getY(i); // Local Y, ranges from +Length/2 to -Length/2
             
-            let zHeight = 0;
-
-            if (!isStartPlatform) {
-                // Generate noise/hills
-                // Simple sine waves for "rolling hills"
-                // Add global slope downward
-                const globalZ = zPosition + y; // y runs from +50 to -50 relative to center
-                
-                // Downward slope equation: y = x * slope
-                // We want to roll down -Z. So height should decrease as Z decreases.
-                // But here we are manipulating local Z (height) of the plane.
-                
-                // Noise
-                zHeight += Math.sin(x * 0.1) * 2; 
-                zHeight += Math.sin((globalZ) * 0.1) * 2;
-                
-                // Bowl shape to keep player in center
-                zHeight += Math.pow(Math.abs(x) / 10, 2); 
-            }
+            // Map to World Coordinates
+            // We rotate X by -90 later. 
+            // So Mesh Local Y+ -> World Z-
+            // But wait, to ensure seamless math, let's calculate the target World X, Z for this vertex
+            // Mesh is positioned at (0, 0, zCenter)
+            // Mesh rotation -90 X means:
+            // Local (x, y, z) -> World (x, z, -y) roughly (ignoring sign details for a moment)
+            // Let's stick to explicit mapping:
+            // The mesh will be at position (0, 0, zCenter).
+            // It is rotated -PI/2 on X.
+            // A vertex (lx, ly, 0) in local becomes:
+            // World X = lx
+            // World Y = 0 (before height mod)
+            // World Z = zCenter - ly  (Assuming plane top Y is "back" and bottom Y is "forward")
+            // Let's verify: Plane Y goes from +H/2 (top) to -H/2 (bottom).
+            // If we rotate top away, +H/2 maps to -Z relative to center.
+            // So WorldZ = zCenter - ly.
             
-            posAttribute.setZ(i, zHeight);
+            const worldX = lx;
+            const worldZ = zCenter - ly; 
+            
+            const height = this.getHeightAt(worldX, worldZ);
+            
+            // Set local Z (which becomes World Y)
+            posAttribute.setZ(i, height);
+            
+            // Store for physics (World Coords)
+            vertices.push(worldX, height, worldZ);
         }
 
         geometry.computeVertexNormals();
 
-        // Texture
-        const canvas = document.createElement('canvas');
-        canvas.width = 128;
-        canvas.height = 128;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#4CAF50'; // Grass
-        ctx.fillRect(0,0,128,128);
-        ctx.fillStyle = '#388E3C';
-        for(let k=0; k<50; k++) {
-            ctx.fillRect(Math.random()*128, Math.random()*128, 4, 4);
+        // Texture - simple grid/checker or noise
+        if (!this.sharedTexture) {
+             const canvas = document.createElement('canvas');
+             canvas.width = 256;
+             canvas.height = 256;
+             const ctx = canvas.getContext('2d');
+             // Base Grass
+             ctx.fillStyle = '#68a045'; 
+             ctx.fillRect(0,0,256,256);
+             // Noise
+             for(let k=0; k<1000; k++) {
+                 ctx.fillStyle = Math.random() > 0.5 ? '#7cb356' : '#558b35';
+                 ctx.fillRect(Math.random()*256, Math.random()*256, 4, 4);
+             }
+             // Grid lines
+             ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+             ctx.lineWidth = 2;
+             ctx.beginPath();
+             for(let i=0; i<=256; i+=32) {
+                 ctx.moveTo(i, 0); ctx.lineTo(i, 256);
+                 ctx.moveTo(0, i); ctx.lineTo(256, i);
+             }
+             ctx.stroke();
+             
+             this.sharedTexture = new THREE.CanvasTexture(canvas);
+             this.sharedTexture.wrapS = THREE.RepeatWrapping;
+             this.sharedTexture.wrapT = THREE.RepeatWrapping;
+             this.sharedTexture.repeat.set(this.chunkWidth/10, this.chunkLength/10);
         }
-        
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
-        texture.repeat.set(10, 10);
 
         const material = new THREE.MeshStandardMaterial({ 
-            map: texture,
-            side: THREE.DoubleSide
+            map: this.sharedTexture,
+            roughness: 0.8,
+            metalness: 0.1,
+            side: THREE.DoubleSide,
+            flatShading: true // Low poly look
         });
 
         const mesh = new THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
-        mesh.position.set(0, -2, zPosition - (this.chunkSize/2)); // Adjust pivot
+        // Position Y is 0 because height is baked into vertices relative to 0
+        mesh.position.set(0, 0, zCenter);
         
-        // Tilt the whole chunk for the hill effect
-        const slopeAngle = 0.2; // Radians down (-Z direction)
-        // Rotate positive X to tilt +Z up (so -Z is downhill)
-        mesh.rotation.x += slopeAngle;
-        
-        // Adjust Y position so it connects to previous
-        // Offset so that at Z=0 the surface is at Base Level
-        const yOffset = (this.chunkSize/2) * Math.sin(slopeAngle);
-        mesh.position.y = (zPosition * Math.sin(slopeAngle)) - yOffset;
-        
-        this.scene.add(mesh);
+        mesh.castShadow = true;
         mesh.receiveShadow = true;
+        this.scene.add(mesh);
 
-        // Physics Body (Heightfield or Trimesh)
-        // For dynamic terrain, Trimesh is often easier to position than Heightfield in Cannon
-        
-        // Convert Three geometry to Cannon Trimesh
-        const vertices = [];
-        const indices = [];
-        
-        for (let i = 0; i < posAttribute.count; i++) {
-            vertices.push(posAttribute.getX(i), posAttribute.getY(i), posAttribute.getZ(i));
-        }
-        
-        // Plane geometry faces are indexed
+        // Physics Body
+        // Trimesh needs indices
         for (let i = 0; i < geometry.index.count; i++) {
             indices.push(geometry.index.array[i]);
         }
-        
+
+        // Cannon Trimesh expects vertices as flat array [x,y,z, x,y,z...]
+        // Our 'vertices' array is exactly that
         const shape = new CANNON.Trimesh(vertices, indices);
         const body = new CANNON.Body({ mass: 0, material: this.mat });
         body.addShape(shape);
+        // Trimesh is created in World Space coords because we baked them?
+        // No, Trimesh vertices are local to the Body.
+        // We calculated 'vertices' as World Coords (worldX, height, worldZ).
+        // If we put the Body at (0,0,0) and Identity rotation, it aligns.
         
-        // Align physics body with visual mesh
-        body.position.copy(mesh.position);
-        body.quaternion.copy(mesh.quaternion);
-        
+        body.position.set(0, 0, 0); 
         this.world.addBody(body);
 
-        this.chunks.push({ mesh, body, z: zPosition });
-        this.lastChunkZ = zPosition - this.chunkSize;
+        this.chunks.push({ mesh, body, z: zCenter });
     }
 
     update(playerZ) {
+        // Add new chunks ahead
+        // Current lowest Z chunk
+        const lastChunk = this.chunks[this.chunks.length - 1];
+        if (playerZ < lastChunk.z + this.chunkLength) { 
+            // Player is approaching the end of the known world
+            // Generate next chunk at lastChunk.z - chunkLength
+            this.createChunk(lastChunk.z - this.chunkLength);
+        }
+
         // Remove old chunks
-        if (this.chunks.length > 0 && this.chunks[0].z > playerZ + this.chunkSize) {
+        if (this.chunks[0].z > playerZ + this.chunkLength * 2) {
             const chunk = this.chunks.shift();
             this.scene.remove(chunk.mesh);
             this.world.removeBody(chunk.body);
             chunk.mesh.geometry.dispose();
-            chunk.mesh.material.dispose();
-        }
-
-        // Add new chunks
-        if (this.chunks[this.chunks.length - 1].z > playerZ - (this.chunkSize * 2)) {
-            this.createChunk(this.lastChunkZ, false);
+            // Don't dispose texture as it is shared
         }
     }
 }
