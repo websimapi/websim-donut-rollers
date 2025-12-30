@@ -177,7 +177,7 @@ function animate() {
         }
 
         // Update Score
-        const zPos = donut.getPosition().z;
+        const zPos = donut.meshGroup.position.z;
         score = Math.floor(Math.abs(zPos));
         document.getElementById('score-val').innerText = score;
 
@@ -205,7 +205,7 @@ function animate() {
         camera.position.y = donut.meshGroup.position.y + 5;
         camera.lookAt(donut.meshGroup.position);
     } else if (gameState === 'PLAYING') {
-        const targetPos = donut.getPosition();
+        const targetPos = donut.meshGroup.position;
         
         // Safety check to prevent camera NaN bugs causing black/blue screen
         if (targetPos && !isNaN(targetPos.x) && !isNaN(targetPos.y) && !isNaN(targetPos.z)) {
