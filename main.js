@@ -75,7 +75,8 @@ loadAudio('./rolling_loop.mp3', 'roll');
 loadAudio('./music_loop.mp3', 'music');
 
 // --- Game Objects ---
-const donut = new Donut(scene, world, new THREE.Vector3(0, 2, 0), assets);
+// Start at Y = -0.4 so the feet (roughly 1.6 units below center) touch the terrain at Y = -2
+const donut = new Donut(scene, world, new THREE.Vector3(0, -0.4, 0), assets);
 const terrain = new InfiniteTerrain(scene, world);
 
 // --- Input Handling ---

@@ -40,10 +40,11 @@ export class Donut {
         const eyeGeo = new THREE.SphereGeometry(0.12, 16, 16);
         const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
         
+        // Position eyes on the ring dough, not in the hole
         const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-        leftEye.position.set(-0.3, 0.3, 0.35);
+        leftEye.position.set(-0.35, 0.8, 0.05);
         const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-        rightEye.position.set(0.3, 0.3, 0.35);
+        rightEye.position.set(0.35, 0.8, 0.05);
         
         // Shine in eyes
         const shineGeo = new THREE.SphereGeometry(0.04, 8, 8);
@@ -58,9 +59,9 @@ export class Donut {
         
         this.eyesGroup.add(leftEye);
         this.eyesGroup.add(rightEye);
-        // Position eyes on the front of the torus
-        this.eyesGroup.position.z = 0.8;
-        this.eyesGroup.position.y = 0.2;
+        // Position eyes on the front surface of the torus
+        this.eyesGroup.position.z = 0.5; // Touch the surface (radius 0.45 + offset)
+        this.eyesGroup.position.y = 0;
         this.meshGroup.add(this.eyesGroup);
 
         // 3. Limbs (Arms and Legs)
@@ -91,7 +92,8 @@ export class Donut {
         // --- Physics ---
         // We use a Sphere for rolling physics because it handles slopes best
         // The visual torus will rotate to match logic
-        const radius = 1.3; // Slightly larger than torus visual radius to cover it
+        // Visual radius = 1 (major) + 0.45 (tube) = 1.45
+        const radius = 1.45; 
         const mass = 10;
         this.body = new CANNON.Body({
             mass: mass,
