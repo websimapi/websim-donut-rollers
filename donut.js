@@ -77,6 +77,8 @@ export class Donut {
         // Continuous Collision Detection
         this.body.ccdSpeedThreshold = 0.5;
         this.body.ccdIterations = 10;
+        
+        this.lastBoostTime = 0;
     }
 
     _addCharacterFeatures() {
@@ -149,28 +151,6 @@ export class Donut {
         // Sounds
         this.assets.playSound('jump');
         this.assets.playLoop('roll');
-    }
-
-    boostForward() {
-        if (!this.isRolling) return;
-
-        // Linear push down the hill (World +Z) to maintain race direction
-        const linearBoost = 10; 
-        const impulse = new CANNON.Vec3(0, 0, linearBoost); 
-        this.body.applyImpulse(impulse, this.body.position);
-
-        // Angular boost: Spin the wheel around its actual physical axle
-        // The physics body Local X axis is the rotation axis (Axle) due to our shape setup
-        const axle = new CANNON.Vec3(1, 0, 0);
-        this.body.quaternion.vmult(axle, axle);
-
-        // Apply spin to the angular velocity along the axle vector
-        // Positive rotation around local X propels the donut forward relative to its facing
-        const angularBoost = 5.0;
-        const spinImpulse = axle.scale(angularBoost);
-        this.body.angularVelocity.vadd(spinImpulse, this.body.angularVelocity);
-
-        this.assets.playSound('jump');
     }
 
     update(time, dt) {
@@ -265,5 +245,35 @@ export class Donut {
     
     applyForce(vec) {
         this.body.applyForce(vec, this.body.position);
+    }
+
+    boost() {
+        const now = Date.now();
+        if (now - this.lastBoostTime < 1500) return; // 1.5s cooldown
+        
+        this.lastBoostTime = now;
+
+        // Calculate forward direction relative to current rotation
+        // Axle is Local X. Transform to World.
+        const axle = new CANNON.Vec3(1, 0, 0);
+        this.body.quaternion.vmult(axle, axle);
+        
+        // Up is World Y
+        const up = new CANNON.Vec3(0, 1, 0);
+        
+        // Forward = Axle x Up (Cross Product) produces a vector tangent to the ground
+        const forward = new CANNON.Vec3();
+        axle.cross(up, forward);
+        forward.normalize();
+        
+        if (forward.length() > 0) {
+            // Apply strong impulse for instant speed
+            // Force magnitude adjusted for mass=30
+            const force = forward.scale(800); 
+            this.body.applyImpulse(force, this.body.position);
+            
+            // Audio feedback
+            if(this.assets.playSound) this.assets.playSound('jump');
+        }
     }
 }

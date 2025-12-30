@@ -38,7 +38,7 @@ scene.add(dirLight);
 
 // Physics World
 const world = new CANNON.World();
-world.gravity.set(0, -25, 0); // Strong, realistic gravity pull to ensure slope adherence
+world.gravity.set(0, -70, 0); // Stronger gravity to keep donut grounded
 world.solver.iterations = 30; // High iterations for stable heightfield collisions
 world.defaultContactMaterial.friction = 0.3; // Lower default friction to prevent sticky "glitches"
 world.defaultContactMaterial.restitution = 0.2;
@@ -47,11 +47,6 @@ world.defaultContactMaterial.restitution = 0.2;
 let gameState = 'IDLE'; // IDLE, STARTING, PLAYING, GAME_OVER
 let input = { x: 0 }; // -1 to 1
 let stoppedTime = 0; // how long we've been basically stopped
-
-// Swipe / drag state
-let lastTouchY = null;
-let lastMouseY = null;
-let mouseDown = false;
 
 // --- Audio System ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -110,40 +105,13 @@ window.addEventListener('touchmove', (e) => {
     if (e.target.id === 'game-container' || e.target.tagName === 'BODY') {
         e.preventDefault();
     }
-    const touch = e.touches[0];
-    const touchX = touch.clientX;
-    const touchY = touch.clientY;
-
-    // Horizontal steer
+    const touchX = e.touches[0].clientX;
     handleInput((touchX / window.innerWidth) * 2 - 1);
-
-    // Vertical swipe for forward boost (swipe up)
-    if (gameState === 'PLAYING') {
-        if (lastTouchY === null) lastTouchY = touchY;
-        const dy = touchY - lastTouchY;
-        const swipeThreshold = -40; // pixels; negative = upward swipe
-        if (dy < swipeThreshold) {
-            donut.boostForward();
-            lastTouchY = touchY; // reset so repeated swipes can trigger
-        }
-    }
 }, { passive: false });
 
 window.addEventListener('mousemove', (e) => {
     if (gameState === 'PLAYING') {
-        // Horizontal steer
         handleInput((e.clientX / window.innerWidth) * 2 - 1);
-
-        // Mouse drag up for boost
-        if (mouseDown) {
-            if (lastMouseY === null) lastMouseY = e.clientY;
-            const dy = e.clientY - lastMouseY;
-            const dragThreshold = -20; // smaller threshold for mouse
-            if (dy < dragThreshold) {
-                donut.boostForward();
-                lastMouseY = e.clientY;
-            }
-        }
     }
 });
 
@@ -172,31 +140,21 @@ function startGame() {
     gameState = 'PLAYING';
 }
 
-window.addEventListener('click', startGame);
+function handleTap() {
+    if (gameState === 'IDLE') {
+        startGame();
+    } else if (gameState === 'PLAYING') {
+        donut.boost();
+    }
+}
 
-window.addEventListener('mousedown', (e) => {
-    mouseDown = true;
-    lastMouseY = e.clientY;
-});
-
-window.addEventListener('mouseup', () => {
-    mouseDown = false;
-    lastMouseY = null;
-});
-
+window.addEventListener('click', handleTap);
 window.addEventListener('touchstart', (e) => {
     // Prevent default touch behaviors on canvas
-    if (e.target.tagName !== 'BUTTON') {
-        startGame();
-    }
-    if (e.touches[0]) {
-        lastTouchY = e.touches[0].clientY;
+    if(e.target.tagName !== 'BUTTON') {
+       handleTap();
     }
 }, { passive: false });
-
-window.addEventListener('touchend', () => {
-    lastTouchY = null;
-});
 
 // --- Resize ---
 window.addEventListener('resize', () => {
